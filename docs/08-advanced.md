@@ -359,6 +359,43 @@ phases:
 
 ---
 
+## Phase Delta Tracking & Analytics
+
+### How it works
+
+The orchestrator writes a `QualitySnapshot` to `quality-timeline.jsonl` after every sub-agent returns. This creates a per-change quality timeline that tracks how build health, issue counts, completeness, and scope evolve across the 11 phases.
+
+### Viewing analytics
+
+```
+/sdd:analytics add-csv-export
+```
+
+This reads the JSONL file and computes:
+- **Build health progression** — Did typecheck/lint/tests improve or regress between phases?
+- **Issue density by phase** — Which phases introduced the most critical issues?
+- **Completeness curve** — How did task/spec coverage grow over the pipeline?
+- **Scope summary** — Total files created, modified, reviewed
+- **Phase timing** — Duration between consecutive snapshots
+- **Regressions** — Any metric that worsened (flagged for attention)
+
+### Using analytics for process improvement
+
+Over multiple changes, analytics reveal patterns:
+- If `sdd-apply` consistently introduces type errors that `sdd-verify` catches, the design phase may need stronger interface definitions
+- If review REJECT violations appear frequently, the AGENTS.md rules may need to be surfaced earlier (e.g., in the design SKILL.md)
+- If completeness plateaus below 100%, task granularity may need adjustment
+
+### Manual inspection
+
+The JSONL format is human-readable. Each line is a self-contained JSON object:
+
+```bash
+cat openspec/changes/add-csv-export/quality-timeline.jsonl | jq .
+```
+
+---
+
 ## Extending Engram Memory
 
 ### Custom topic key families

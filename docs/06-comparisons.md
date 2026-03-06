@@ -713,6 +713,6 @@ in actual codebase findings), but they do not eliminate it.
 
 ## Navigation
 
-- Previous: [05 - Engram Memory](./05-engram.md)
-- Next: [07 - Troubleshooting](./07-troubleshooting.md)
-- Back to: [Index](./00-index.md)
+- Previous: [05 - Skills Catalog](./05-skills-catalog.md)
+- Next: [07 - Configuration](./07-configuration.md)
+- Back to: [README](../README.md)

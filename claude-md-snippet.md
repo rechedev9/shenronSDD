@@ -71,6 +71,7 @@ Recognize natural language intent and suggest the appropriate SDD command:
 - `/sdd:verify [name]` — Technical quality gate (typecheck, lint, tests, security)
 - `/sdd:clean [name]` — Dead code removal + simplification
 - `/sdd:archive [name]` — Merge specs + archive + capture learnings
+- `/sdd:analytics [name]` — Quality analytics from phase delta tracking
 
 ### Utility Commands (standalone, usable outside SDD)
 
@@ -99,6 +100,40 @@ Recognize natural language intent and suggest the appropriate SDD command:
 | **apply** | **Opus (inherit)** | Production code under strict TypeScript — highest cognitive load |
 
 Sonnet agents use `model: 'sonnet'` in Task() calls. Opus agents omit the parameter (inherit from orchestrator session).
+
+### Post-Sub-Agent Checklist (MANDATORY after every sub-agent return)
+
+After receiving a sub-agent result, the orchestrator MUST complete these steps **before** presenting results to the user or launching the next phase:
+
+1. **Extract snapshot** — Parse the sub-agent's envelope and build a `QualitySnapshot` (see Phase Delta Tracking below).
+2. **Append to timeline** — Write one JSONL line to `openspec/changes/{changeName}/quality-timeline.jsonl`. Create the file if it doesn't exist.
+3. **Then proceed** — Present summary to user, ask about next phase.
+
+For planning phases (explore, propose, spec, design, tasks) that return no build metrics, write a minimal snapshot with `agentStatus` and any available completeness counts — all other fields `null`. **Do not skip the write just because most fields are null.**
+
+### Phase Delta Tracking
+
+After **every** sub-agent returns its envelope, the orchestrator extracts a normalized QualitySnapshot and appends it to the change's timeline:
+
+1. **Extract** — Map envelope fields to QualitySnapshot:
+   - `agentStatus`: Always extract — every envelope has a `status` field
+   - `issues.critical`: Count of CRITICAL/REJECT/FAIL findings from the envelope
+   - `buildHealth`: From `buildStatus` or `buildHealth` fields (typecheck, lint, format, tests)
+   - `completeness`: From task/spec completion counts
+   - `scope`: From file counts (filesCreated, filesModified, filesReviewed)
+   - `phaseSpecific`: Full envelope passthrough (preserves all raw data)
+2. **Append** — Serialize the QualitySnapshot as a single JSON line and append to:
+   ```
+   openspec/changes/{changeName}/quality-timeline.jsonl
+   ```
+3. **Create if missing** — If the timeline file doesn't exist, create it with the first snapshot.
+4. **Never block** — If the envelope is malformed or extraction fails, write a minimal snapshot (`changeName`, `phase`, `timestamp`, `agentStatus`) and continue. Phase delta tracking is observational, never blocking.
+5. **Apply batches** — For multi-batch `sdd-apply`, append one snapshot per batch with `phaseSpecific.batch` recording the batch number.
+6. **Planning phases** — explore/propose/spec/design/tasks produce mostly-null snapshots. This is correct — write them anyway for timeline completeness.
+
+### Analytics
+
+Run `/sdd:analytics [name]` to analyze the quality timeline for a change. This reads `quality-timeline.jsonl` and produces trend reports: build health over time, issue counts by phase, completeness progression, and phase duration estimates.
 
 ## Engram Persistent Memory — ACTIVE PROTOCOL
 

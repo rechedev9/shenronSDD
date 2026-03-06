@@ -335,6 +335,30 @@ Close a completed change — merge specs, archive artifacts, capture learnings.
 
 ---
 
+### `/sdd:analytics [name]`
+
+Analyze quality trends from phase delta tracking data.
+
+```
+/sdd:analytics add-csv-export
+```
+
+**What it does:**
+- Reads `openspec/changes/{name}/quality-timeline.jsonl`
+- Computes phase-over-phase deltas for build health, issue counts, completeness, and scope
+- Produces a trend report with:
+  - Build health progression (typecheck/lint/test pass rates over phases)
+  - Issue density by phase (critical/warning counts)
+  - Completeness curve (task and spec scenario coverage over time)
+  - Phase timing estimates
+- Highlights regressions (any metric that worsened between phases)
+
+**Output:** Formatted report to stdout (not written to a file).
+
+**Run when:** After completing a change to review quality trends, or mid-pipeline to check progress.
+
+---
+
 ## Utility Commands
 
 Standalone commands usable outside the SDD pipeline.
@@ -472,6 +496,7 @@ All commands are `.md` files in `~/.claude/commands/`:
   sdd-verify.md
   sdd-clean.md
   sdd-archive.md
+  sdd-analytics.md
   verify.md
   build-fix.md
   commit-push-pr.md

@@ -109,10 +109,10 @@ Decisions are not stored in the conversation. They are written to files on disk:
 
 ```
 openspec/changes/payment-refactor/
-  proposal.yaml     ← WHY we are making this change
-  spec.yaml         ← WHAT the requirements are (with rationale)
-  design.yaml       ← HOW we decided to implement it (with alternatives considered)
-  tasks.yaml        ← The implementation plan
+  proposal.md       ← WHY we are making this change
+  specs/*/spec.md   ← WHAT the requirements are (with rationale)
+  design.md         ← HOW we decided to implement it (with alternatives considered)
+  tasks.md          ← The implementation plan
 ```
 
 When a sub-agent needs to know why a decision was made, it reads the file. The file has
@@ -225,19 +225,19 @@ This creates a cascade of problems:
 SDD produces a full traceability chain for every change:
 
 ```
-proposal.yaml   →  WHAT is changing and WHY
+proposal.md     →  WHAT is changing and WHY
                     (business context, user impact, motivation)
         |
         v
-spec.yaml       →  WHAT must be true when the change is complete
+specs/*/spec.md →  WHAT must be true when the change is complete
                     (RFC 2119 requirements, Given/When/Then scenarios)
         |
         v
-design.yaml     →  HOW the change will be implemented
+design.md       →  HOW the change will be implemented
                     (architecture decisions, alternatives considered, interfaces)
         |
         v
-tasks.yaml      →  The implementation plan
+tasks.md        →  The implementation plan
                     (phased, numbered, verifiable steps)
         |
         v
@@ -430,7 +430,6 @@ and fresh context at each step. SDD is the workflow that provides those conditio
 
 ---
 
-**Next:** [02 - Architecture](02-architecture.md) — How the orchestrator, sub-agents,
-and artifact pipeline are structured.
+**Next:** [02 - Pipeline](02-pipeline.md) — Deep dive into all 11 phases with examples and artifact formats.
 
 **Back to:** [README](../README.md)

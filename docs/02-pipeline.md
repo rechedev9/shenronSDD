@@ -714,6 +714,7 @@ openspec/
       review-report.md
       verify-report.md
       clean-report.md
+      quality-timeline.jsonl   # Phase delta tracking (one JSON line per phase)
     archive/
       2026-02-22-add-login-endpoint/   # Archived after sdd:archive
         archive-manifest.md
@@ -730,6 +731,39 @@ openspec/
 The `openspec/specs/` directory is the long-term record of what the system is supposed to do. Changes contribute to it over time via the archive merge step. `openspec/changes/` holds in-flight work. `openspec/changes/archive/` holds the history of all completed changes.
 
 New team members can read `openspec/specs/` to understand the system's intended behavior without reading source code. Reviewers can audit `openspec/changes/archive/` to understand why decisions were made.
+
+---
+
+## Phase Delta Tracking
+
+Every sub-agent returns a structured envelope to the orchestrator. After each return, the orchestrator extracts a `QualitySnapshot` and appends it as a single JSON line to `openspec/changes/{name}/quality-timeline.jsonl`.
+
+### QualitySnapshot Fields
+
+| Field | Source | Present in |
+|-------|--------|-----------|
+| `changeName` | Pipeline state | All phases |
+| `phase` | Current phase name | All phases |
+| `timestamp` | ISO 8601 | All phases |
+| `agentStatus` | Envelope `status` field | All phases |
+| `issues.critical` | Count of CRITICAL/REJECT/FAIL findings | review, verify |
+| `buildHealth` | typecheck, lint, format, test pass/fail | apply, verify, clean |
+| `completeness` | Task/spec completion counts | tasks, apply, verify |
+| `scope` | Files created/modified/reviewed counts | apply, review, clean |
+| `phaseSpecific` | Full envelope passthrough | All phases |
+
+### Example Timeline Entry
+
+```json
+{"changeName":"add-csv-export","phase":"apply","timestamp":"2026-02-22T15:30:00Z","agentStatus":"COMPLETED","issues":{"critical":0},"buildHealth":{"typecheck":"PASS","lint":"PASS","tests":"PASS","format":"PASS"},"completeness":{"tasksTotal":19,"tasksComplete":12},"scope":{"filesCreated":3,"filesModified":2},"phaseSpecific":{"batch":2}}
+```
+
+### Design Principles
+
+- **Observational, never blocking** — If envelope parsing fails, a minimal snapshot (`changeName`, `phase`, `timestamp`, `agentStatus`) is written and the pipeline continues.
+- **Planning phases produce sparse snapshots** — explore/propose/spec/design/tasks populate only `agentStatus` and completion counts. All other fields are `null`. This is correct and expected.
+- **One line per phase** — Each phase append produces exactly one JSON line. Multi-batch `sdd-apply` produces one line per batch with `phaseSpecific.batch` recording the batch number.
+- **Analytics** — Run `/sdd:analytics {name}` to compute trends: build health progression, issue density by phase, completeness curves, and phase timing.
 
 ---
 

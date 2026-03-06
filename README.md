@@ -3,7 +3,7 @@
 **Spec-Driven Development for Claude Code — structured AI coding that doesn't forget, doesn't hallucinate, and doesn't skip steps.**
 
 ![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)
-![Skills: 25+](https://img.shields.io/badge/Skills-25%2B-green.svg)
+![Skills: 37+](https://img.shields.io/badge/Skills-37%2B-green.svg)
 ![Phases: 11](https://img.shields.io/badge/Phases-11-orange.svg)
 
 ---
@@ -40,6 +40,7 @@ Then open any project and run:
 - [The Ecosystem at a Glance](#the-ecosystem-at-a-glance)
 - [SDD Commands Reference](#sdd-commands-reference)
 - [Documentation Index](#documentation-index)
+- [Project Structure](#project-structure)
 - [When NOT to Use SDD](#when-not-to-use-sdd)
 - [Contributing](#contributing)
 - [License](#license)
@@ -108,24 +109,24 @@ stored in the `openspec/` directory.
 | # | Phase | What Happens | Output Artifact |
 |---|-------|-------------|-----------------|
 | 1 | **init** | Bootstrap `openspec/` directory. Detect tech stack, frameworks, and conventions from the project. Generate configuration. | `openspec/config.yaml` |
-| 2 | **explore** | Read-only codebase investigation. Map architecture, identify patterns, assess risks for the proposed change. | `openspec/changes/{name}/explore-report.yaml` |
-| 3 | **propose** | Write a human-readable change proposal. Define WHAT will change and WHY. Identify scope and impact. | `openspec/changes/{name}/proposal.yaml` |
-| 4 | **spec** | Write delta specifications using RFC 2119 keywords (MUST/SHOULD/MAY). Define Given/When/Then scenarios for testable requirements. | `openspec/changes/{name}/spec.yaml` |
-| 5 | **design** | Write technical design: HOW the change will be implemented. Architecture decisions, interfaces, data flow, component boundaries. | `openspec/changes/{name}/design.yaml` |
-| 6 | **tasks** | Break the design into phased, numbered implementation tasks. Each task is a concrete, verifiable unit of work. | `openspec/changes/{name}/tasks.yaml` |
-| 7 | **apply** | Implement code in batches, one phase at a time. Built-in build-fix loop: implement, typecheck, fix, repeat. | Modified source files + `openspec/changes/{name}/apply-log.yaml` |
-| 8 | **review** | Semantic code review. Compare implementation against specs, design, and AGENTS.md rules. Flag violations. | `openspec/changes/{name}/review-report.yaml` |
-| 9 | **verify** | Technical quality gate: typecheck, lint, tests, static analysis, security scan. Binary pass/fail with details. | `openspec/changes/{name}/verify-report.yaml` |
-| 10 | **clean** | Dead code removal, duplicate elimination, simplification. Only touches code related to the change. | Modified source files + `openspec/changes/{name}/clean-report.yaml` |
-| 11 | **archive** | Merge delta specs into main specs. Move change artifacts to archive. Capture learnings for future sessions. | `openspec/archive/{name}/` |
+| 2 | **explore** | Read-only codebase investigation. Map architecture, identify patterns, assess risks for the proposed change. | `openspec/changes/{name}/exploration.md` |
+| 3 | **propose** | Write a human-readable change proposal. Define WHAT will change and WHY. Identify scope and impact. | `openspec/changes/{name}/proposal.md` |
+| 4 | **spec** | Write delta specifications using RFC 2119 keywords (MUST/SHOULD/MAY). Define Given/When/Then scenarios for testable requirements. | `openspec/changes/{name}/specs/*/spec.md` |
+| 5 | **design** | Write technical design: HOW the change will be implemented. Architecture decisions, interfaces, data flow, component boundaries. | `openspec/changes/{name}/design.md` |
+| 6 | **tasks** | Break the design into phased, numbered implementation tasks. Each task is a concrete, verifiable unit of work. | `openspec/changes/{name}/tasks.md` |
+| 7 | **apply** | Implement code in batches, one phase at a time. Built-in build-fix loop: implement, typecheck, fix, repeat. | Modified source files + updated `openspec/changes/{name}/tasks.md` |
+| 8 | **review** | Semantic code review. Compare implementation against specs, design, and AGENTS.md rules. Flag violations. | `openspec/changes/{name}/review-report.md` |
+| 9 | **verify** | Technical quality gate: typecheck, lint, tests, static analysis, security scan. Binary pass/fail with details. | `openspec/changes/{name}/verify-report.md` |
+| 10 | **clean** | Dead code removal, duplicate elimination, simplification. Only touches code related to the change. | Modified source files + `openspec/changes/{name}/clean-report.md` |
+| 11 | **archive** | Merge delta specs into main specs. Move change artifacts to archive. Capture learnings for future sessions. | `openspec/changes/archive/{date}-{name}/` |
 
 ### The Delta Spec Pattern
 
 SDD uses delta specifications instead of full rewrites. Each spec describes only what
 changes relative to the current state:
 
-```yaml
-# Example delta spec
+```markdown
+# Example delta spec (in specs/*/spec.md)
 deltas:
   - type: ADDED
     target: src/components/dashboard-chart.tsx
@@ -178,11 +179,11 @@ sub-agents with the right context.
 ```
 Orchestrator (your session)
   |
-  |-- Task(sdd-explore) → reads codebase, writes explore-report.yaml
-  |-- Task(sdd-propose) → reads explore-report, writes proposal.yaml
-  |-- Task(sdd-spec)    → reads proposal, writes spec.yaml
-  |-- Task(sdd-design)  → reads proposal, writes design.yaml
-  |-- Task(sdd-tasks)   → reads spec + design, writes tasks.yaml
+  |-- Task(sdd-explore) → reads codebase, writes exploration.md
+  |-- Task(sdd-propose) → reads exploration, writes proposal.md
+  |-- Task(sdd-spec)    → reads proposal, writes specs/*/spec.md
+  |-- Task(sdd-design)  → reads proposal, writes design.md
+  |-- Task(sdd-tasks)   → reads spec + design, writes tasks.md
   |-- Task(sdd-apply)   → reads tasks + spec + design, writes code
   |-- Task(sdd-review)  → reads spec + design + code, writes review
   |-- Task(sdd-verify)  → runs typecheck/lint/test, writes report
@@ -288,6 +289,27 @@ curate documentation as a prerequisite, not a supplement. If the agent needs to 
 internet during implementation, the spec is incomplete — fix the spec, not just the code.
 Over time, each SKILL.md converges toward completeness, and internet search during
 implementation drops to zero.
+
+#### Phase Delta Tracking
+
+Every sub-agent returns a structured envelope. The orchestrator extracts a
+`QualitySnapshot` from each envelope and appends it as a single JSON line to
+`openspec/changes/{name}/quality-timeline.jsonl`. This creates a per-change
+quality timeline that tracks build health, issue counts, completeness, and scope
+across all 11 phases.
+
+Planning phases (explore, propose, spec, design, tasks) produce mostly-null
+snapshots — only `agentStatus` and completion counts are populated. Implementation
+and verification phases populate build health (typecheck/lint/test results), issue
+counts (critical/warning), and scope metrics (files created/modified/reviewed).
+
+Run `/sdd:analytics` on a change to visualize trends: build health progression,
+issue density by phase, completeness curves, and phase timing estimates. This is
+especially useful for multi-session changes where quality drift is hard to spot
+manually.
+
+The tracking is observational and never blocking — if envelope extraction fails,
+a minimal snapshot is written and the pipeline continues.
 
 ---
 
@@ -457,10 +479,10 @@ sessions.
 |-----------|-------|-------------|-------------|
 | SDD Phase Skills | 11 | 3,435 | Core pipeline: init through archive |
 | Framework Skills | 14 | 3,029 | Version-specific patterns for React 19, Tailwind 4, TypeScript, etc. |
-| Slash Commands | 17 | 1,474 | SDD commands + utility commands |
+| Slash Commands | 18 | ~1,550 | SDD commands (incl. analytics) + utility commands |
 | Support Skills | 8 | 1,617 | Analysis, knowledge management, workflow utilities |
-| Learned Patterns | 4 | 164 | Patterns extracted from real usage via /learn |
-| **Total Ecosystem** | **54** | **~9,719** | |
+| Learned Patterns | 4+ | grows | Patterns extracted from real usage via /learn |
+| **Total Ecosystem** | **55+** | **~9,800+** | |
 
 ### Skill Categories Breakdown
 
@@ -475,7 +497,8 @@ sessions.
 
 **Slash Commands**:
 - SDD: `/sdd:init`, `/sdd:explore`, `/sdd:new`, `/sdd:continue`, `/sdd:ff`,
-  `/sdd:apply`, `/sdd:review`, `/sdd:verify`, `/sdd:clean`, `/sdd:archive`
+  `/sdd:apply`, `/sdd:review`, `/sdd:verify`, `/sdd:clean`, `/sdd:archive`,
+  `/sdd:analytics`
 - Utility: `/commit-push-pr`, `/learn`, `/evolve`, `/instinct`, `/verify`,
   `/build-fix`, `/code-review`
 
@@ -501,6 +524,7 @@ build validation, code simplification, refactor cleaning, environment diagnostic
 | `/sdd:verify [name]` | Technical quality gate | Typecheck, lint, test, security verification |
 | `/sdd:clean [name]` | Dead code removal + simplification | Post-review cleanup |
 | `/sdd:archive [name]` | Merge specs + capture learnings | Closing out a completed change |
+| `/sdd:analytics [name]` | Quality analytics from phase delta tracking | Reviewing quality progression mid-pipeline or post-completion |
 
 ### Utility Commands
 
@@ -553,6 +577,7 @@ build validation, code simplification, refactor cleaning, environment diagnostic
 | [06 - Comparisons](docs/06-comparisons.md) | SDD vs standard workflows, tradeoffs, and when to use each approach |
 | [07 - Configuration](docs/07-configuration.md) | `openspec/config.yaml`, CLAUDE.md setup, AGENTS.md rules, MCP config |
 | [08 - Advanced](docs/08-advanced.md) | Advanced usage, customization, and extending SDD |
+| [CLAUDE.md Snippet](claude-md-snippet.md) | Ready-to-paste orchestrator protocol for your project's CLAUDE.md |
 
 ---
 
@@ -621,14 +646,21 @@ Architecture      →  Full pipeline with extra review cycles
       tailwind-4/SKILL.md
       typescript/SKILL.md
       ...
-    support/                # 8 support skills
+    analysis/               # 4 analysis skills
+      architect/SKILL.md
+      build-validator/SKILL.md
+      code-simplifier/SKILL.md
+      verify-app/SKILL.md
+    knowledge/              # 3 knowledge skills
       ...
-    learned/                # 4 learned patterns
+    workflows/              # 4 workflow skills
+      ...
+    learned/                # Learned patterns (grows at runtime)
       ...
   commands/                 # 17 slash commands
-    sdd:init.md
-    sdd:explore.md
-    sdd:new.md
+    sdd-init.md             # Note: hyphens in filenames, colons in invocation
+    sdd-explore.md
+    sdd-new.md
     ...
 
 your-project/
@@ -637,18 +669,22 @@ your-project/
     specs/                  # Main specs (merged from deltas)
     changes/                # Active changes (one dir per change)
       feature-name/
-        explore-report.yaml
-        proposal.yaml
-        spec.yaml
-        design.yaml
-        tasks.yaml
-        apply-log.yaml
-        review-report.yaml
-        verify-report.yaml
-        clean-report.yaml
-    archive/                # Completed changes
+        exploration.md
+        proposal.md
+        specs/
+          domain/spec.md    # Delta specs grouped by domain
+        design.md
+        tasks.md
+        review-report.md
+        verify-report.md
+        clean-report.md
+        quality-timeline.jsonl  # Phase delta tracking (see Analytics)
+      archive/              # Completed changes
+        2026-02-22-feature-name/
+          archive-manifest.md
+          ...               # All phase artifacts preserved
   CLAUDE.md                 # Project instructions + SDD protocol
-  AGENTS.md                 # review rules (REJECT/REQUIRE/PREFER)
+  AGENTS.md                 # Review rules (REJECT/REQUIRE/PREFER)
 ```
 
 ---
