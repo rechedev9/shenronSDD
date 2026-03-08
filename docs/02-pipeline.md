@@ -73,6 +73,8 @@ Note that spec and design are parallel branches that both depend on proposal.md 
 
 **Output artifact**: `openspec/config.yaml`
 
+**v1.1 Enhancements**: Two additions: (1) **AGENTS.md Auto-Generation** (Step 5b) — if no AGENTS.md exists, sdd-init generates one combining AI code review rules (REJECT/REQUIRE/PREFER extracted from CLAUDE.md) with SDD global context (pipeline overview, openspec/ directory purpose, build commands). (2) **PARCER Operational Contracts** — config.yaml now includes a `contracts` section with formal pre/post-conditions for every phase, validated by the orchestrator before launching sub-agents.
+
 **Example config.yaml**:
 ```yaml
 project:
@@ -139,6 +141,8 @@ changes_dir: ./openspec/changes
 - Must document assumptions explicitly when files cannot be fully analyzed (e.g., generated code, external packages).
 
 **Output artifact**: `openspec/changes/{name}/exploration.md`
+
+**v1.1 Enhancement — Structured Exploration Protocol**: The explore agent now follows a mandatory hypothesis-driven cycle for each file read: HYPOTHESIS (what it expects to find) → CONFIDENCE level (HIGH/MEDIUM/LOW) → OBSERVATIONS (findings with File:Line references) → HYPOTHESIS STATUS (CONFIRMED/REFUTED/REFINED) → NEXT ACTION JUSTIFICATION. This prevents shallow, aimless file reading and creates an auditable reasoning trail.
 
 **Example exploration.md excerpt**:
 ```markdown
@@ -410,6 +414,8 @@ interface SessionToken {
 
 **Output artifacts**: Source code (created/modified per the file changes table) + updated `tasks.md` with completed tasks marked `[x]`
 
+**v1.1 Enhancements**: Three additions strengthen the apply phase: (1) **Structured Reading Protocol** — before modifying any file, the agent completes a hypothesis cycle to ensure new code follows existing patterns. (2) **Test Generation Governance** — standard mode explicitly avoids generating speculative tests when specs provide sufficient coverage, conserving token budget. (3) **Experience-Driven Early Termination (EET)** — the build-fix loop queries Engram memory before fix attempt #3+; if the error signature matches a known dead-end from prior sessions, the loop aborts early instead of wasting tokens.
+
 ---
 
 ### Phase 8: review
@@ -451,6 +457,8 @@ interface SessionToken {
 - `FAILED` — one or more REJECT violations, or one or more REQUIRE violations, or spec scenarios uncovered
 
 **Output artifact**: `openspec/changes/{name}/review-report.md`
+
+**v1.1 Enhancements**: Two additions: (1) **Dynamic Agentic Rubric** (Step 2b) — before reviewing code, the agent generates a change-specific rubric from specs, design.md, and AGENTS.md, then scores each criterion post-review. This anchors evaluation to actual requirements. (2) **Semi-Formal Certificate** (Steps 3h–3j) — function tracing table, data flow analysis, and counter-hypothesis check force the agent to trace every function signature, map data flow with invariants, and actively search for evidence the implementation could fail.
 
 **Example review-report.md excerpt**:
 ```markdown
@@ -509,6 +517,8 @@ interface SessionToken {
 - `FAIL` — any check fails, or completeness < 80%, or there are unresolved REJECT violations from review-report
 
 **Output artifact**: `openspec/changes/{name}/verify-report.md`
+
+**v1.1 Enhancement — Fault Localization Protocol** (Step 5b): When tests fail, the verify agent now produces structured PREMISES (step-by-step test semantics: arrange/act/assert) and DIVERGENCE CLAIMS (formal statements cross-referencing test expectations with specific source code locations where behavior diverges). This gives sdd-apply precise diagnosis instead of raw failure output.
 
 **Example verify-report.md excerpt**:
 ```markdown

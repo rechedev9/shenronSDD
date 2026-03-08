@@ -37,6 +37,15 @@ Task(
 )
 ```
 
+### Contract Validation (MANDATORY before launching next phase)
+
+Before dispatching any sub-agent, the orchestrator MUST validate the target phase's preconditions from `openspec/config.yaml → contracts.{phase}.preconditions`:
+
+1. **Read contracts** — Load the `contracts` section from config.yaml. If `contracts` section does not exist (legacy projects or pre-init), skip validation and proceed normally.
+2. **Check preconditions** — For each precondition of the target phase, verify it is satisfied (file exists, field is non-empty, prior phase completed).
+3. **If any precondition fails** — Do NOT launch the sub-agent. Report the unmet precondition(s) to the user and suggest which prior phase needs to run first.
+4. **After sub-agent returns** — Validate postconditions against the returned envelope and written artifacts. If a postcondition fails, flag it as a WARNING in the quality timeline (it does not block the next phase, but is recorded for analytics).
+
 ### SDD Phase Pipeline
 
 ```

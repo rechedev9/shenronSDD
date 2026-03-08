@@ -25,6 +25,8 @@ Bootstrap Spec-Driven Development for a project.
 - Detects runtime (Bun/Node/Deno/Go/Python/Rust), frameworks, database, ORM, test runner
 - Extracts conventions from `CLAUDE.md` (type strictness, error handling, testing patterns)
 - Creates `openspec/` directory structure with `config.yaml`
+- Generates `AGENTS.md` at project root if it doesn't exist (SDD context + code review rules extracted from `CLAUDE.md`)
+- Generates `contracts` section in `config.yaml` with per-phase pre/post-conditions (PARCER operational contracts)
 
 **Output:**
 ```
@@ -197,6 +199,10 @@ bun test           → fix test failures in touched files
 bun run format:check → auto-format affected files
 ```
 
+**v1.1 Enhancements:**
+- **Test Generation Governance**: Standard mode does not generate speculative tests. Tests are only created when explicitly required by the task or when using `--tdd` mode with underspecified specs.
+- **Experience-Driven Early Termination (EET)**: Before fix attempt #3+, the build-fix loop queries Engram memory for matching error patterns. If the current error matches a known dead-end from prior sessions, the loop aborts early. Failure patterns are saved to Engram on escalation for future queries.
+
 **Hard rules:** No `any`, no `as Type`, no `@ts-ignore`, no `!` assertions. If design contradicts spec, follows spec and notes deviation.
 
 ---
@@ -223,6 +229,12 @@ Semantic code review comparing implementation against specs and project rules.
 | WARNING | REQUIRE violated, missing edge case, poor error handling | Yes (if REQUIRE) |
 | SUGGESTION | PREFER not followed, minor naming, style preference | No |
 
+**v1.1 Enhancements:**
+- **Dynamic Agentic Rubric**: Before reviewing, generates a change-specific rubric from specs + design + AGENTS.md. Each criterion is scored post-review. Verdict must be consistent with rubric scores.
+- **Function Tracing Table**: Every exported function touched by the change gets a row with File:Line, parameter types, return type, and verified behavior.
+- **Data Flow Analysis**: Critical data paths traced from creation through transformations to consumption, with invariants documented.
+- **Counter-Hypothesis Check**: For each critical function, actively searches for evidence the implementation could fail. Minimum one counter-hypothesis per critical function.
+
 **Output:** `openspec/changes/{name}/review-report.md` with PASSED/FAILED verdict.
 
 **Note:** This agent never fixes issues — it reports only. Fixes go back to `/sdd:apply --fix-only`.
@@ -244,6 +256,11 @@ bun run lint         # ESLint
 bun run format:check # Prettier
 bun test             # Full test suite
 ```
+
+**v1.1 Enhancement — Fault Localization:**
+When tests fail, the verify agent produces structured diagnosis:
+- **PREMISES**: Step-by-step test semantics (test identifier, arrange, act, assert)
+- **DIVERGENCE CLAIMS**: Formal cross-references between test expectations and source code locations where behavior diverges, with confidence levels (HIGH/MEDIUM/LOW)
 
 **Static analysis scan:**
 - Banned `any` usage (CRITICAL)

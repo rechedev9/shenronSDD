@@ -1,15 +1,16 @@
-# The Four Architecture Pillars
+# The Five Architecture Pillars
 
 ## Introduction
 
-SDD rests on four architecture pillars. Each solves a specific failure mode of standard AI coding workflows. These are not abstract design principles — each pillar exists because a concrete, recurring problem was observed in AI-assisted development, and each pillar is implemented as a specific, inspectable mechanism.
+SDD rests on five architecture pillars. Each solves a specific failure mode of standard AI coding workflows. These are not abstract design principles — each pillar exists because a concrete, recurring problem was observed in AI-assisted development, and each pillar is implemented as a specific, inspectable mechanism.
 
-The four pillars are:
+The five pillars are:
 
 1. **Agent Teams Lite** — Sub-agent isolation prevents context pollution
 2. **Engram Persistent Memory** — SQLite-backed memory prevents session amnesia
 3. **Agent Review Rules** — File-based review rules eliminate circular self-review
 4. **Framework Skills** — On-demand skill files correct training data cutoffs
+5. **Semi-Formal Reasoning** — Structured hypothesis-evidence-observation cycles prevent shallow analysis
 
 Understanding these pillars explains why SDD is structured the way it is, and why the orchestrator protocol rules (never read source code, never write implementation, always delegate) are not arbitrary restrictions but load-bearing design decisions.
 
@@ -474,9 +475,68 @@ Over time, the skill files become a curated, project-specific extension of the m
 
 ---
 
+## Pillar 5: Semi-Formal Reasoning
+
+### The Problem
+
+AI agents process information sequentially but do not naturally externalize their reasoning. When an explore agent reads 15 files, it holds observations in its hidden state — but those observations are unstructured, unordered, and prone to being overwritten by newer information. When a review agent checks code against specs, it reads both and produces a verdict — but the intermediate reasoning (which functions were traced, which data flows were verified, which failure modes were considered) is invisible and often shallow.
+
+Two concrete failure modes emerge from this:
+
+**Confirmation bias in exploration**: The agent forms an early hypothesis about how a module works, then reads subsequent files through that lens. Contradictory evidence is weighted less heavily than confirming evidence — not through malice, but because the model's attention mechanism naturally reinforces patterns it has already activated.
+
+**Rubber-stamp reviews**: The agent reads the spec, reads the code, and produces "PASSED — implementation matches requirements" without genuinely testing the correspondence. The review is a formality, not a rigorous check. Critical edge cases, data flow invariants, and potential failure modes are not examined because the agent was not structurally required to examine them.
+
+### The Solution
+
+Semi-formal reasoning injects mandatory reasoning templates at key points in four SDD phases. The agent must fill these templates as part of its execution — they are not optional annotations but required steps that gate progress to the next action.
+
+**Structured Exploration Protocol (sdd-explore, Step 4)**:
+
+Before reading any file, the agent declares:
+- A **hypothesis** about what it expects to find
+- The **evidence** that led it to this file
+- A **confidence level** (HIGH / MEDIUM / LOW)
+
+After reading, it must formally update:
+- **Observations** with exact File:Line references
+- **Hypothesis status**: CONFIRMED, REFUTED, or REFINED
+- **Next action justification**: Why the next file is the logical next step
+
+The confidence field is critical. A HIGH-confidence hypothesis that gets REFUTED signals a fundamental misunderstanding — the agent must investigate deeper, not move on. A LOW-confidence hypothesis that gets CONFIRMED is a genuine discovery worth highlighting. Without the confidence declaration, the agent treats all reads as equally informative, which they are not.
+
+**Semi-Formal Certificate (sdd-review, Steps 3h–3j)**:
+
+The review agent must produce three formal structures:
+
+1. **Function Tracing Table**: Every exported function touched by the change gets a row with File:Line, parameter types, return type, and verified behavior. This forces the agent to actually look up each function instead of reasoning about what it "probably" does.
+
+2. **Data Flow Analysis**: For each critical data path, trace creation → transformations → consumption → invariants, with File:Line at every step. This catches a class of bugs where data is transformed incorrectly at an intermediate step — bugs that are invisible when you only check inputs and outputs.
+
+3. **Counter-Hypothesis Check**: For each critical function, the agent must actively search for evidence that the implementation is wrong. The claim format — "Function X at File:Line could fail when..." — forces adversarial thinking. The agent is not asking "is this correct?" (which invites confirmation) but "how could this be wrong?" (which invites scrutiny).
+
+**Fault Localization Protocol (sdd-verify, Step 5b)**:
+
+When tests fail, the agent must decompose each failure into PREMISES (what the test does, step by step) and DIVERGENCE CLAIMS (where exactly the test's expectation diverges from the code's behavior, with specific File:Line references and a confidence level). This transforms vague "test failed" reports into precise diagnostic maps that sdd-apply can act on directly.
+
+### Why "Semi-Formal"
+
+Full formal verification (proof-based reasoning, theorem provers) is impractical for general-purpose software engineering. Informal reasoning ("the code looks right") is insufficient for AI agents whose internal reasoning is opaque. Semi-formal reasoning occupies the middle ground: structured templates that enforce rigor without requiring mathematical proof. The templates are designed to be light enough that they do not significantly increase token consumption, but structured enough that they prevent the most common reasoning failures.
+
+### Relationship to Other Pillars
+
+Semi-formal reasoning complements but does not replace the other four pillars:
+
+- **Agent Teams Lite** (Pillar 1) ensures each agent has focused context. Semi-formal reasoning ensures the agent *uses* that context rigorously.
+- **Engram Memory** (Pillar 2) persists decisions across sessions. Semi-formal reasoning creates better decisions to persist.
+- **Agent Review Rules** (Pillar 3) provides mechanical REJECT/REQUIRE checks. Semi-formal reasoning adds semantic verification (function tracing, data flow, counter-hypotheses) on top.
+- **Framework Skills** (Pillar 4) provides version-correct patterns. Semi-formal reasoning ensures those patterns are applied with understanding, not just pattern-matching.
+
+---
+
 ## How the Pillars Work Together
 
-The four pillars are not independent features. They compose. A concrete scenario shows how all four activate in a single change.
+The five pillars are not independent features. They compose. A concrete scenario shows how all five activate in a single change.
 
 ### Scenario: Implementing OAuth2 Login
 
@@ -529,10 +589,11 @@ It does not receive the orchestrator's conversation history, the Engram context 
 **The composition**: Engram provided historical context before investigation began. Agent Teams Lite isolated each phase's reasoning. Skills corrected version-specific patterns during implementation. Agent Review Rules verified the result against explicit, team-agreed rules.
 
 Each pillar addressed a failure mode that the others did not:
-- Engram addresses session amnesia (no pillar 1, 3, or 4 can prevent re-discovering old decisions)
-- Agent Teams Lite addresses context pollution (no pillar 2, 3, or 4 can reduce in-session noise)
-- Agent Review Rules addresses circular self-review (no pillar 1, 2, or 4 can eliminate author bias)
-- Skills address training cutoffs (no pillar 1, 2, or 3 can inject current framework knowledge)
+- Engram addresses session amnesia (no other pillar can prevent re-discovering old decisions)
+- Agent Teams Lite addresses context pollution (no other pillar can reduce in-session noise)
+- Agent Review Rules addresses circular self-review (no other pillar can eliminate author bias)
+- Skills address training cutoffs (no other pillar can inject current framework knowledge)
+- Semi-Formal Reasoning addresses shallow analysis (no other pillar can force rigorous intermediate reasoning)
 
 Remove any one pillar and a specific category of quality problems returns.
 

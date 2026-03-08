@@ -15,19 +15,19 @@ Skills are loaded on demand — not all at startup.
 11 skills that implement the SDD pipeline phases. Each is a complete sub-agent specification.
 
 **Location:** `~/.claude/skills/sdd/{skill-name}/SKILL.md`
-**Total lines:** 3,435
+**Total lines:** ~3,835
 
 | Skill | Phase | Description | Lines |
 |---|---|---|---|
-| `sdd-init` | init | Bootstrap SDD: detect stack, create openspec/, generate config.yaml | ~295 |
-| `sdd-explore` | explore | Read-only codebase investigation with risk assessment | ~328 |
+| `sdd-init` | init | Bootstrap SDD: detect stack, create openspec/, generate config.yaml, AGENTS.md, and operational contracts | ~370 |
+| `sdd-explore` | explore | Read-only codebase investigation with risk assessment and structured exploration protocol (hypothesis-driven file analysis) | ~360 |
 | `sdd-propose` | propose | Write structured change proposal (WHAT + WHY) | ~294 |
 | `sdd-spec` | spec | Write delta specs with RFC 2119 + Given/When/Then | ~332 |
 | `sdd-design` | design | Write technical design with architecture decisions + interfaces | ~386 |
 | `sdd-tasks` | tasks | Break design into phased, numbered implementation checklist | ~464 |
-| `sdd-apply` | apply | Implement code in batches with build-fix loop | ~224 |
-| `sdd-review` | review | Semantic code review against specs + AGENTS.md | ~240 |
-| `sdd-verify` | verify | Technical quality gate: typecheck, lint, tests, static analysis | ~282 |
+| `sdd-apply` | apply | Implement code in batches with build-fix loop, structured reading protocol, test generation governance, and EET | ~280 |
+| `sdd-review` | review | Semantic code review with dynamic agentic rubric, function tracing, data flow analysis, and counter-hypothesis check | ~310 |
+| `sdd-verify` | verify | Technical quality gate with fault localization protocol for test failure diagnosis | ~310 |
 | `sdd-clean` | clean | Dead code removal, duplicate elimination, simplification | ~285 |
 | `sdd-archive` | archive | Merge delta specs, archive change, capture learnings | ~305 |
 
@@ -276,13 +276,13 @@ Skills extracted from past sessions using `/learn`. These grow over time as patt
 
 | Category | Count | Lines | Location |
 |---|---|---|---|
-| SDD phase skills | 11 | 3,435 | `~/.claude/skills/sdd/` |
+| SDD phase skills | 11 | ~3,835 | `~/.claude/skills/sdd/` |
 | Framework skills | 14 | 3,029 | `~/.claude/skills/frameworks/` |
 | Analysis skills | 4 | ~500 | `~/.claude/skills/analysis/` |
 | Knowledge skills | 3 | ~600 | `~/.claude/skills/knowledge/` |
 | Workflow skills | 4 | ~517 | `~/.claude/skills/workflows/` |
 | Learned skills | 4+ | grows | `~/.claude/skills/learned/` |
-| **Total** | **40+** | **~8,081+** | |
+| **Total** | **40+** | **~8,481+** | |
 
 ---
 

@@ -228,6 +228,82 @@ phases:
     date_format: "YYYY-MM-DD"
     preserve_removed_specs: true  # Comment out, never delete REMOVED requirements
     learnings_threshold: reusable # Only save genuinely reusable, non-obvious insights
+
+# ─────────────────────────────────────────────────────────
+# CONTRACTS (v1.1)
+# Pre/post-conditions for each phase, validated by orchestrator
+# ─────────────────────────────────────────────────────────
+contracts:
+  explore:
+    preconditions:
+      - config.yaml exists at openspec/config.yaml
+      - topic is non-empty string
+    postconditions:
+      - exploration.md written to openspec/changes/{changeName}/ (if changeName provided)
+      - envelope contains relevant_files array with ≥1 entry
+      - envelope status is success or error
+  propose:
+    preconditions:
+      - exploration.md exists at openspec/changes/{changeName}/
+    postconditions:
+      - proposal.md written with all required_sections
+      - envelope contains approach and risk_summary
+  spec:
+    preconditions:
+      - proposal.md exists and was approved
+    postconditions:
+      - ≥1 spec file in openspec/changes/{changeName}/specs/
+      - each spec contains ≥1 GIVEN/WHEN/THEN scenario
+  design:
+    preconditions:
+      - proposal.md exists and was approved
+    postconditions:
+      - design.md written with all required_sections
+      - ≥1 interface definition with typed fields
+  tasks:
+    preconditions:
+      - spec files exist in specs/
+      - design.md exists
+    postconditions:
+      - tasks.md written with ≥1 phase containing ≥1 task
+      - each task references a spec scenario or design component
+  apply:
+    preconditions:
+      - tasks.md exists with ≥1 uncompleted task
+      - design.md exists
+      - spec files exist in specs/
+    postconditions:
+      - ≥1 task marked [x] in tasks.md
+      - buildStatus included in envelope
+      - all created/modified files listed
+  review:
+    preconditions:
+      - ≥1 task marked [x] in tasks.md
+      - files created/modified by apply exist on disk
+    postconditions:
+      - review-report.md written
+      - envelope contains verdict (PASSED or FAILED)
+      - all spec scenarios accounted for in coverage matrix
+  verify:
+    preconditions:
+      - review-report.md exists (or explicitly skipped)
+      - implementation files exist on disk
+    postconditions:
+      - verify-report.md written
+      - envelope contains buildHealth with all 4 checks
+      - verdict consistent with decision matrix
+  clean:
+    preconditions:
+      - verify verdict is PASS or PASS_WITH_WARNINGS
+    postconditions:
+      - specs merged to openspec/specs/ (if enabled)
+      - no orphaned imports or dead code in changed files
+  archive:
+    preconditions:
+      - clean phase completed
+    postconditions:
+      - change directory moved to archive/
+      - summary.md written with final metrics
 ```
 
 ---
@@ -312,6 +388,18 @@ spec_test_coverage_fail: 50  # FAIL if >50% of scenarios have no tests
 ```
 
 Set to `0` to require 100% scenario coverage. Set to `100` to never fail on coverage (useful early in development).
+
+---
+
+### `contracts`
+
+*Added in v1.1.* Formal pre/post-conditions for each SDD phase.
+
+**Preconditions** are validated by the orchestrator BEFORE launching a sub-agent. If any precondition fails, the sub-agent is not launched and the orchestrator reports which prior phase needs to run first.
+
+**Postconditions** are validated AFTER the sub-agent returns. Failures are logged as warnings in `quality-timeline.jsonl` but do not block the next phase.
+
+If the `contracts` section is missing (projects initialized before v1.1), contract validation is skipped. Run `/sdd:init --force` to regenerate with contracts.
 
 ---
 

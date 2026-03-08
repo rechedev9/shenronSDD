@@ -5,6 +5,7 @@
 ![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)
 ![Skills: 37+](https://img.shields.io/badge/Skills-37%2B-green.svg)
 ![Phases: 11](https://img.shields.io/badge/Phases-11-orange.svg)
+![Version: 1.1](https://img.shields.io/badge/Version-1.1-purple.svg)
 
 ---
 
@@ -35,6 +36,7 @@ Then open any project and run:
 - [The Solution](#the-solution)
 - [How It Works](#how-it-works)
 - [The Four Pillars](#the-four-pillars)
+- [What's New in v1.1](#whats-new-in-v11)
 - [Quick Start](#quick-start)
 - [Before and After](#before-and-after)
 - [The Ecosystem at a Glance](#the-ecosystem-at-a-glance)
@@ -161,7 +163,11 @@ is new versus modified, and archiving merges deltas into a coherent history.
 ## The Four Pillars
 
 SDD is built on four interlocking systems. Each solves a specific failure mode of
-standard AI coding workflows.
+standard AI coding workflows. Version 1.1 adds a fifth architectural concept —
+**Semi-Formal Reasoning** — which forces agents to externalize their reasoning
+process through structured hypothesis-evidence-observation cycles at critical
+pipeline phases (explore, apply, review, verify). This prevents shallow analysis,
+rubber-stamp reviews, and vague failure reports.
 
 | Pillar | Problem It Solves | How It Works |
 |--------|------------------|--------------|
@@ -310,6 +316,40 @@ manually.
 
 The tracking is observational and never blocking — if envelope extraction fails,
 a minimal snapshot is written and the pipeline continues.
+
+---
+
+## What's New in v1.1
+
+Version 1.1 introduces **Semi-Formal Reasoning** and **Research-Backed Optimizations** across the SDD pipeline. These enhancements are grounded in 2026 AI software engineering research and target specific failure modes observed in AI-assisted development.
+
+### Semi-Formal Reasoning (4 enhancements)
+
+AI agents tend to read files without purpose and review code without rigor. Semi-formal reasoning injects structured cognitive scaffolds that force agents to externalize their reasoning process.
+
+| Phase | Enhancement | What it prevents |
+|-------|-------------|-----------------|
+| **explore** | Structured Exploration Protocol — HYPOTHESIS + CONFIDENCE + EVIDENCE → OBSERVATIONS → STATUS UPDATE → NEXT ACTION | Shallow exploration, confirmation bias, aimless file reading |
+| **apply** | Structured Reading Protocol — lightweight hypothesis cycle before modifying files | Writing code that contradicts existing patterns |
+| **review** | Semi-Formal Certificate — function tracing table, data flow analysis, counter-hypothesis check | Rubber-stamp reviews, missed data flow bugs |
+| **verify** | Fault Localization Protocol — PREMISES (test semantics) + DIVERGENCE CLAIMS when tests fail | Vague "test failed" reports, guessing at root causes |
+
+### Research-Backed Optimizations (4 enhancements)
+
+| Enhancement | Phase | Research basis | What it solves |
+|-------------|-------|---------------|----------------|
+| **Test Generation Governance** | apply | "Rethinking Agent-Generated Tests" (Feb 2026) | Agents burning tokens on speculative tests that duplicate spec scenarios |
+| **Experience-Driven Early Termination (EET)** | apply | EET framework (Jan 2026) | Build-fix loops stuck in known dead-end patterns, wasting tokens |
+| **Dynamic Agentic Rubric** | review | Agentic Rubrics + LLM-as-Judge (2026) | Reviews anchored to generic best practices instead of change-specific requirements |
+| **PARCER Operational Contracts** | init + orchestrator | PARCER governance framework (Mar 2026) | Phases launching without required inputs, inconsistent outputs |
+
+### AGENTS.md Auto-Generation
+
+`/sdd:init` now generates an `AGENTS.md` file when one doesn't exist. This file serves dual purpose:
+- **AI code review rules** (REJECT/REQUIRE/PREFER) — extracted from your `CLAUDE.md` conventions
+- **SDD global context** — so any AI agent (not just Claude Code) understands your project's SDD architecture, `openspec/` structure, and build commands
+
+See [08-advanced.md](docs/08-advanced.md) for implementation details.
 
 ---
 
@@ -576,7 +616,7 @@ build validation, code simplification, refactor cleaning, environment diagnostic
 | [05 - Skills Catalog](docs/05-skills-catalog.md) | How framework skills work, how to create new ones, skill anatomy |
 | [06 - Comparisons](docs/06-comparisons.md) | SDD vs standard workflows, tradeoffs, and when to use each approach |
 | [07 - Configuration](docs/07-configuration.md) | `openspec/config.yaml`, CLAUDE.md setup, AGENTS.md rules, MCP config |
-| [08 - Advanced](docs/08-advanced.md) | Advanced usage, customization, and extending SDD |
+| [08 - Advanced](docs/08-advanced.md) | Advanced usage, customization, and extending SDD — Semi-Formal Reasoning, EET, Agentic Rubrics, PARCER Contracts |
 | [CLAUDE.md Snippet](claude-md-snippet.md) | Ready-to-paste orchestrator protocol for your project's CLAUDE.md |
 
 ---
