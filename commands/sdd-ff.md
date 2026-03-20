@@ -48,7 +48,7 @@ sdd context <name> propose
 ```
 Agent(
   description: 'sdd-propose for {change-name}',
-  model: 'sonnet',
+  # Opus — proposal quality shapes the entire pipeline
   prompt: '{propose context}
 
   Write proposal to: openspec/changes/{change-name}/.pending/propose.md
@@ -72,7 +72,7 @@ Launch both sub-agents simultaneously:
 ```
 Agent(
   description: 'sdd-spec for {change-name}',
-  model: 'sonnet',
+  # Opus — precise requirements matter
   run_in_background: true,
   prompt: '{spec context}
 

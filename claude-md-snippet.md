@@ -73,9 +73,12 @@ After the sub-agent returns, promote with `sdd write <name> <phase>`.
 
 | Agent | Model | Reason |
 |---|---|---|
-| explore, propose, spec, tasks, review, clean | `sonnet` | Structured/analytical work |
+| explore, tasks, clean | `sonnet` | Tool use + mechanical decomposition |
+| **propose** | **Opus** | Proposal quality shapes the entire pipeline |
+| **spec** | **Opus** | Precise requirements, not superficial |
 | **design** | **Opus** | Architecture decisions shape everything |
 | **apply** | **Opus** | Production code quality |
+| **review** | **Opus** | Adversarial review finds subtle bugs |
 | verify, archive | **Go (0 tokens)** | Deterministic — no LLM needed |
 
 ### Trigger Detection

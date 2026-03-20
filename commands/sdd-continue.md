@@ -52,7 +52,7 @@ sdd context <name> [phase]
 ```
 Agent(
   description: 'sdd-{phase} for {change-name}',
-  model: 'sonnet',  # Use Opus for design (architecture decisions)
+  model: 'sonnet',  # Sonnet for explore and tasks only; omit model for propose/spec/design (inherits Opus)
   prompt: '{context from sdd context output}
 
   Write your output to the pending artifact:
@@ -107,11 +107,11 @@ Agent(
 #### review
 
 1. Get context: `sdd context <name> review`
-2. Launch sub-agent (Sonnet — review is analytical):
+2. Launch sub-agent (Opus — finds subtle bugs, not just checklist):
 ```
 Agent(
   description: 'sdd-review for {change-name}',
-  model: 'sonnet',
+  # Opus — adversarial review needs deep reasoning
   prompt: '{context from sdd context output}
 
   Review the implementation against specs and design. Write review-report.md to:

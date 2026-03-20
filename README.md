@@ -82,12 +82,12 @@ Every phase has two actors: **Go orchestrates** (state, context, cache), **Claud
 |---|-------|-----------|---------------|--------|---------------|
 | 1 | **init** | — | Go detects stack, creates config | `config.yaml` | **0** |
 | 2 | **explore** | Claude (Sonnet) | Go assembles SKILL + file tree + manifests | `exploration.md` | ~44K |
-| 3 | **propose** | Claude (Sonnet) | Go assembles SKILL + exploration + project context | `proposal.md` | ~16K |
-| 4 | **spec** | Claude (Sonnet) | Go assembles SKILL + proposal + cascade summary | `specs/*.md` | ~38K |
+| 3 | **propose** | Claude (Opus) | Go assembles SKILL + exploration + project context | `proposal.md` | ~25K |
+| 4 | **spec** | Claude (Opus) | Go assembles SKILL + proposal + cascade summary | `specs/*.md` | ~50K |
 | 5 | **design** | Claude (Opus) | Go assembles SKILL + proposal + specs + cascade | `design.md` | ~42K |
 | 6 | **tasks** | Claude (Sonnet) | Go assembles SKILL + design + specs | `tasks.md` | ~21K |
 | 7 | **apply** | Claude (Opus) | Go assembles SKILL + current task + completed tasks + design | source files | varies |
-| 8 | **review** | Claude (Sonnet) | Go assembles SKILL + specs + design + git diff | `review-report.md` | varies |
+| 8 | **review** | Claude (Opus) | Go assembles SKILL + specs + design + git diff | `review-report.md` | varies |
 | 9 | **verify** | **None** | **Go runs build/lint/test directly** | `verify-report.md` | **0** |
 | 10 | **clean** | Claude (Sonnet) | Go assembles SKILL + verify-report + design + specs | `clean-report.md` | varies |
 | 11 | **archive** | **None** | **Go moves directory + writes manifest** | `archive/` | **0** |

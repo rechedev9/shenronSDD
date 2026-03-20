@@ -60,7 +60,7 @@ Launch a sub-agent with the propose context:
 ```
 Agent(
   description: 'sdd-propose for {change-name}',
-  model: 'sonnet',
+  # Opus — proposal quality shapes the entire pipeline
   prompt: '{propose context from sdd context output}
 
   Write your proposal to the pending artifact:

@@ -25,7 +25,7 @@ This assembles: spec files, design.md, tasks.md, git diff of changed files, proj
 ```
 Agent(
   description: 'sdd-review for {change-name}',
-  model: 'sonnet',
+  # Opus — adversarial review needs deep reasoning
   prompt: '{context from sdd context output}
 
   Mode: {normal|strict|quick}
