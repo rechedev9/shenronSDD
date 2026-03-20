@@ -1,70 +1,43 @@
-# /learn - Extract Reusable Patterns
+# /learn — Extract Reusable Patterns
 
-Analyze the current session and extract any patterns worth saving as learned skills.
+## Execution
 
-## Trigger
-
-Run `/learn` at any point during a session when you've solved a non-trivial problem.
-
-## What to Extract
-
-Look for:
-
-1. **Error Resolution Patterns**
-   - What error occurred?
-   - What was the root cause?
-   - What fixed it?
-   - Is this reusable for similar errors?
-
-2. **Debugging Techniques**
-   - Non-obvious debugging steps
-   - Tool combinations that worked
-   - Diagnostic patterns
-
-3. **Workarounds**
-   - Library quirks
-   - API limitations
-   - Version-specific fixes
-
-4. **Project-Specific Patterns**
-   - Codebase conventions discovered
-   - Architecture decisions made
-   - Integration patterns
-
-## Process
-
-1. Review the session for extractable patterns
-2. Identify the most valuable/reusable insight
-3. Draft the skill file
+1. Review session for extractable patterns
+2. Identify most valuable/reusable insight
+3. Draft skill file
 4. Ask user to confirm before saving
 5. Save to `~/.claude/skills/learned/`
 
-## Output Format
+## What to Extract
 
-Create a skill file at `~/.claude/skills/learned/[pattern-name].md`:
+- Error resolution patterns (error → root cause → fix → reusable?)
+- Non-obvious debugging techniques
+- Library/API workarounds
+- Project-specific conventions and architecture decisions
+
+Skip: trivial fixes (typos, syntax), one-time issues (outages).
+
+## Output
+
+Save to `~/.claude/skills/learned/[pattern-name].md`:
 
 ```markdown
 # [Descriptive Pattern Name]
 
 **Extracted:** [Date]
-**Context:** [Brief description of when this applies]
+**Context:** [When this applies]
 
 ## Problem
-[What problem this solves - be specific]
+[Specific problem]
 
 ## Solution
-[The pattern/technique/workaround]
+[Pattern/technique/workaround]
 
 ## Example
-[Code example if applicable]
+[Code if applicable]
 
 ## When to Use
-[Trigger conditions - what should activate this skill]
+[Trigger conditions]
 ```
 
-## Guidelines
-
-- Don't extract trivial fixes (typos, simple syntax errors)
-- Don't extract one-time issues (specific API outages, etc.)
-- Focus on patterns that will save time in future sessions
-- Keep skills focused — one pattern per skill
+One pattern per skill. Focus on patterns that save time in future sessions.
