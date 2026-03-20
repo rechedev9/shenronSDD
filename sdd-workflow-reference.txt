@@ -1,0 +1,1932 @@
+================================================================================
+SDD WORKFLOW — COMPLETE REFERENCE DOCUMENT FOR NOTEBOOKLM
+Source: https://github.com/rechedev9/sdd-workflow
+Version: 1.1 | License: MIT | Skills: 55+ | Phases: 11
+================================================================================
+
+This document contains the complete content of the Spec-Driven Development (SDD)
+workflow system — all phase skills, the orchestrator protocol, configuration
+schemas, and usage guides. It is intended as a reference feed for NotebookLM.
+
+================================================================================
+SECTION 1: THE PROBLEM AND SOLUTION (README)
+================================================================================
+
+## The Problem
+
+AI coding tools have changed how we build software. You can describe a feature in
+plain English, and a model will generate working code in seconds. But anyone who has
+used these tools on a real codebase — not a toy example, not a greenfield script,
+but a production system with dozens of modules, established conventions, and
+accumulated technical decisions — knows the pattern: it works brilliantly for the
+first few prompts, then starts falling apart.
+
+The root cause is architectural. Current AI coding workflows load an entire project
+into a single agent context, ask it to understand everything at once, and hope it
+produces coherent output. As the context window fills, the model begins compressing
+earlier information. Decisions made three prompts ago get summarized into oblivion.
+Framework version details blur together. The agent starts hallucinating file paths,
+inventing API signatures, and suggesting patterns that conflict with the ones already
+established in the codebase. When the context window resets — whether through
+compaction or a new session — everything learned is gone.
+
+This is not a model intelligence problem. The same model that produces incoherent
+output in a polluted context will produce excellent output when given a clean context
+with focused instructions and the right reference material. The problem is workflow
+architecture: how we structure the interaction between the human, the model, and the
+codebase. SDD is designed to fix that architecture.
+
+## The Solution
+
+SDD treats AI coding like an assembly line, not a one-person shop. Instead of one
+agent doing everything — reading code, writing specs, designing architecture,
+implementing features, reviewing its own work — SDD breaks the process into 11
+discrete phases. Each phase is handled by a fresh sub-agent that receives only the
+context it needs: a focused SKILL.md instruction file, the relevant artifacts from
+prior phases, and nothing else.
+
+The result is a pipeline where every phase produces a concrete artifact on disk,
+every decision is traceable, and no single agent is asked to hold the entire project
+in its head.
+
+Pipeline:
+  init → explore → propose → spec + design (parallel) → tasks → apply → review → verify → clean → archive
+
+The orchestrator (your Claude Code session) manages the pipeline, launching
+sub-agents for each phase and presenting results for human approval between steps.
+The human stays in the loop for decisions. The AI handles the grunt work. Artifacts
+on disk replace compressed context.
+
+================================================================================
+SECTION 2: THE 11 PHASES (PIPELINE OVERVIEW)
+================================================================================
+
+Each phase has a single responsibility, a defined input, and a concrete output
+artifact stored in the openspec/ directory.
+
+Phase 1  - INIT:    Bootstrap openspec/ directory. Detect tech stack, frameworks,
+                    and conventions from the project. Generate configuration.
+                    Output: openspec/config.yaml
+
+Phase 2  - EXPLORE: Read-only codebase investigation. Map architecture, identify
+                    patterns, assess risks for the proposed change.
+                    Output: openspec/changes/{name}/exploration.md
+
+Phase 3  - PROPOSE: Write a human-readable change proposal. Define WHAT will change
+                    and WHY. Identify scope and impact.
+                    Output: openspec/changes/{name}/proposal.md
+
+Phase 4  - SPEC:    Write delta specifications using RFC 2119 keywords (MUST/SHOULD/
+                    MAY). Define Given/When/Then scenarios for testable requirements.
+                    Output: openspec/changes/{name}/specs/*/spec.md
+
+Phase 5  - DESIGN:  Write technical design: HOW the change will be implemented.
+                    Architecture decisions, interfaces, data flow, component boundaries.
+                    Output: openspec/changes/{name}/design.md
+
+Phase 6  - TASKS:   Break the design into phased, numbered implementation tasks.
+                    Each task is a concrete, verifiable unit of work.
+                    Output: openspec/changes/{name}/tasks.md
+
+Phase 7  - APPLY:   Implement code in batches, one phase at a time. Built-in
+                    build-fix loop: implement, typecheck, fix, repeat.
+                    Output: Modified source files + updated tasks.md
+
+Phase 8  - REVIEW:  Semantic code review. Compare implementation against specs,
+                    design, and AGENTS.md rules. Flag violations.
+                    Output: openspec/changes/{name}/review-report.md
+
+Phase 9  - VERIFY:  Technical quality gate: typecheck, lint, tests, static analysis,
+                    security scan. Binary pass/fail with details.
+                    Output: openspec/changes/{name}/verify-report.md
+
+Phase 10 - CLEAN:   Dead code removal, duplicate elimination, simplification.
+                    Only touches code related to the change.
+                    Output: Modified source files + clean-report.md
+
+Phase 11 - ARCHIVE: Merge delta specs into main specs. Move change artifacts to
+                    archive. Capture learnings for future sessions.
+                    Output: openspec/changes/archive/{date}-{name}/
+
+## The Delta Spec Pattern
+
+SDD uses delta specifications instead of full rewrites. Each spec describes only
+what changes relative to the current state:
+
+  deltas:
+    - type: ADDED
+      target: src/components/dashboard-chart.tsx
+      description: New chart component for the analytics dashboard
+      requirements:
+        - "MUST accept a `data` prop of type `ChartDataPoint[]`"
+        - "MUST render using the existing chart library (recharts)"
+        - "SHOULD support responsive resizing"
+        - "MAY support custom color themes"
+      scenarios:
+        - given: "A valid data array with 5 points"
+          when: "The component renders"
+          then: "5 data points are visible on the chart"
+
+    - type: MODIFIED
+      target: src/pages/dashboard.tsx
+      description: Import and render the new chart component
+
+    - type: REMOVED
+      target: src/components/legacy-chart.tsx
+      description: Remove deprecated chart component after migration
+
+================================================================================
+SECTION 3: THE FOUR PILLARS
+================================================================================
+
+## Pillar 1: Agent Teams Lite
+
+Problem solved: Context pollution — one agent tries to hold the entire project and
+loses coherence.
+
+How it works: The orchestrator delegates each phase to a fresh sub-agent via Claude
+Code's Task tool. Each sub-agent receives a clean context with only its SKILL.md and
+the relevant artifacts. No accumulated noise from prior phases.
+
+The orchestrator never reads source code directly. It never writes implementation
+code. Its only job is to track pipeline state, present summaries to the human, and
+launch sub-agents with the right context.
+
+  Orchestrator (your session)
+    |
+    |-- Task(sdd-explore) -> reads codebase, writes exploration.md
+    |-- Task(sdd-propose) -> reads exploration, writes proposal.md
+    |-- Task(sdd-spec)    -> reads proposal, writes specs/*/spec.md
+    |-- Task(sdd-design)  -> reads proposal, writes design.md
+    |-- Task(sdd-tasks)   -> reads spec + design, writes tasks.md
+    |-- Task(sdd-apply)   -> reads tasks + spec + design, writes code
+    |-- Task(sdd-review)  -> reads spec + design + code, writes review
+    |-- Task(sdd-verify)  -> runs typecheck/lint/test, writes report
+    |-- Task(sdd-clean)   -> reads code + review, simplifies
+    |-- Task(sdd-archive) -> merges specs, moves to archive
+
+Each sub-agent starts with a clean context window. It reads its SKILL.md file first,
+then the specific artifacts it needs. It never sees the accumulated conversation from
+previous phases.
+
+## Pillar 2: Engram Persistent Memory
+
+Problem solved: Session amnesia — decisions, patterns, and bug fixes are lost when
+context compacts or sessions restart.
+
+How it works: SQLite + FTS5 MCP memory system. Session start calls mem_context to
+load prior decisions. Proactive mem_save after every decision, bug fix, and pattern
+discovery. Memory survives compaction, session boundaries, and even machine restarts.
+
+Engram tools:
+  mem_save           - Store a decision, pattern, bug fix, or discovery
+  mem_search         - Search memory by keyword or topic
+  mem_context        - Load relevant context for the current session
+  mem_session_summary - Save a structured session summary before closing
+  mem_suggest_topic_key - Get a canonical key for upsert (prevents duplicates)
+  mem_update         - Update an existing memory entry
+  mem_delete         - Remove an obsolete entry
+  mem_timeline       - View chronological history of decisions
+
+Topic key families: architecture/*, bug/*, decision/*, pattern/*, config/*,
+discovery/*, learning/*
+
+## Pillar 3: Agent Review Rules (AGENTS.md)
+
+Problem solved: No traceability — AI reviews its own code with no independent
+standard to check against.
+
+How it works: AGENTS.md contains machine-readable rules with RFC 2119-style prefixes
+(REJECT/REQUIRE/PREFER). The review sub-agent checks every rule mechanically,
+independent of the implementation sub-agent.
+
+Example AGENTS.md:
+  ## Code Quality Rules
+  - REJECT: any use of `any` type in production code
+  - REJECT: empty catch blocks without logging
+  - REQUIRE: explicit return types on all exported functions
+  - REQUIRE: Result<T, E> pattern for fallible operations
+  - PREFER: async/await over .then() chains for multi-step flows
+  - PREFER: immutable patterns with local mutation exceptions
+
+Severity mapping:
+  REJECT  -> CRITICAL (blocks merge)
+  REQUIRE -> REQUIRED (blocks merge)
+  PREFER  -> SUGGESTION (non-blocking)
+
+## Pillar 4: Framework Skills
+
+Problem solved: Framework version mistakes — models mix patterns from different
+versions of the same library.
+
+How it works: Lazy-loaded SKILL.md files per framework. Triggered by file extension
+or import detection. Each skill contains version-specific patterns, banned APIs, and
+correct idioms for that exact version.
+
+Available framework skills:
+  react-19/SKILL.md     - React 19 compiler, use(), Server Components
+  tailwind-4/SKILL.md   - CSS-first config, @theme, no tailwind.config.js
+  typescript/SKILL.md   - Strict mode patterns, type guards, Result<T,E>
+  zod-4/SKILL.md        - Schema validation, v4 API changes
+  zustand-5/SKILL.md    - v5 store patterns, middleware
+  playwright/SKILL.md   - E2E testing patterns
+  nextjs-15/SKILL.md    - App Router, Server Components, Server Actions
+  ai-sdk-5/SKILL.md     - Vercel AI SDK integration
+  github-pr/SKILL.md    - PR creation conventions
+  django-drf/SKILL.md   - Django REST Framework patterns
+  pytest/SKILL.md       - Python testing conventions
+  jira-epic/SKILL.md    - Jira epic creation
+  jira-task/SKILL.md    - Jira task creation
+  skill-creator/SKILL.md - Creating new SKILL.md files
+
+Self-Improving Protocol:
+  1. Before writing code — read the relevant SKILL.md (primary source of truth)
+  2. During implementation — prefer SKILL.md over internet search
+  3. If SKILL.md doesn't answer — search internet, then UPDATE the SKILL.md
+  4. After implementation — if new gotchas found, append them to SKILL.md
+
+================================================================================
+SECTION 4: WHAT'S NEW IN V1.1 — SEMI-FORMAL REASONING
+================================================================================
+
+Version 1.1 introduces Semi-Formal Reasoning and Research-Backed Optimizations
+across the SDD pipeline.
+
+## Semi-Formal Reasoning (4 enhancements)
+
+AI agents tend to read files without purpose and review code without rigor.
+Semi-formal reasoning injects structured cognitive scaffolds.
+
+  explore  | Structured Exploration Protocol: HYPOTHESIS + CONFIDENCE + EVIDENCE
+           |   -> OBSERVATIONS -> STATUS UPDATE -> NEXT ACTION
+           | Prevents: shallow exploration, confirmation bias, aimless file reading
+
+  apply    | Structured Reading Protocol: lightweight hypothesis cycle before
+           |   modifying files
+           | Prevents: writing code that contradicts existing patterns
+
+  review   | Semi-Formal Certificate: function tracing table, data flow analysis,
+           |   counter-hypothesis check
+           | Prevents: rubber-stamp reviews, missed data flow bugs
+
+  verify   | Fault Localization Protocol: PREMISES (test semantics) + DIVERGENCE
+           |   CLAIMS when tests fail
+           | Prevents: vague "test failed" reports, guessing at root causes
+
+## Research-Backed Optimizations (4 enhancements)
+
+  Test Generation Governance (apply)
+    - Research: "Rethinking Agent-Generated Tests" (Feb 2026)
+    - Solves: Agents burning tokens on speculative tests duplicating spec scenarios
+
+  Experience-Driven Early Termination / EET (apply)
+    - Research: EET framework (Jan 2026)
+    - Solves: Build-fix loops stuck in known dead-end patterns, wasting tokens
+
+  Dynamic Agentic Rubric (review)
+    - Research: Agentic Rubrics + LLM-as-Judge (2026)
+    - Solves: Reviews anchored to generic best practices instead of change-specific requirements
+
+  PARCER Operational Contracts (init + orchestrator)
+    - Research: PARCER governance framework (Mar 2026)
+    - Solves: Phases launching without required inputs, inconsistent outputs
+
+================================================================================
+SECTION 5: ORCHESTRATOR PROTOCOL (CLAUDE.MD SNIPPET)
+================================================================================
+
+You are an SDD Orchestrator. Your ONLY workflow for features, bugfixes, and
+refactors is Spec-Driven Development.
+
+## Operating Rules
+
+1. You NEVER execute phase work inline — always delegate to sub-agents via the Task tool
+2. You NEVER read source code directly to implement or analyze — delegate to sub-agents
+3. You NEVER write implementation code — sdd-apply does that
+4. You NEVER write specs/proposals/design — sub-agents do that
+5. You ONLY: track state, present summaries, ask for approval, launch sub-agents
+6. Between sub-agent calls, ALWAYS show the user what was done and ask to proceed
+7. Keep your context MINIMAL — pass file paths to sub-agents, not file contents
+
+## Sub-Agent Launching Pattern
+
+  Task(
+    description: '{phase} for {change-name}',
+    subagent_type: 'general-purpose',
+    prompt: 'You are an SDD sub-agent. Read the skill file at
+             ~/.claude/skills/sdd/sdd-{phase}/SKILL.md FIRST, then follow its
+             instructions exactly.
+
+    CONTEXT:
+    - Project: {project path}
+    - Change: {change-name}
+    - Config: openspec/config.yaml
+    - Previous artifacts: {list of paths}
+
+    TASK: {specific task}
+
+    Return structured JSON envelope with: status, executive_summary,
+    detailed_report (optional), artifacts, next_recommended, risks.'
+  )
+
+## Sub-Agent Model Assignment
+
+  explore, propose, spec, tasks  -> Sonnet (template-driven, structured output)
+  review, verify, clean, archive -> Sonnet (checklist/procedural, nearly deterministic)
+  design                         -> Opus (inherit) — architecture decisions that shape all phases
+  apply                          -> Opus (inherit) — production code under strict TypeScript
+
+## Post-Sub-Agent Checklist (MANDATORY after every sub-agent return)
+
+After receiving a sub-agent result, the orchestrator MUST:
+
+1. Extract snapshot — Parse the sub-agent's envelope and build a QualitySnapshot
+2. Append to timeline — Write one JSONL line to
+   openspec/changes/{changeName}/quality-timeline.jsonl
+3. Then proceed — Present summary to user, ask about next phase
+
+For planning phases (explore, propose, spec, design, tasks) that return no build
+metrics, write a minimal snapshot with agentStatus and any available completeness
+counts — all other fields null.
+
+## Contract Validation (MANDATORY before launching next phase)
+
+Before dispatching any sub-agent, the orchestrator MUST validate the target phase's
+preconditions from openspec/config.yaml -> contracts.{phase}.preconditions:
+
+1. Read contracts — Load the contracts section from config.yaml
+2. Check preconditions — verify each is satisfied (file exists, prior phase complete)
+3. If any precondition fails — Do NOT launch the sub-agent. Report to user.
+4. After sub-agent returns — Validate postconditions. Flag failures as WARNINGs.
+
+## Phase Delta Tracking
+
+QualitySnapshot extraction mapping:
+  agentStatus      -> from envelope status field (always present)
+  issues.critical  -> count of CRITICAL/REJECT/FAIL findings
+  buildHealth      -> from buildStatus or buildHealth fields
+  completeness     -> from task/spec completion counts
+  scope            -> from file counts (filesCreated, filesModified, filesReviewed)
+  phaseSpecific    -> full envelope passthrough (preserves all raw data)
+
+Append as JSONL to: openspec/changes/{changeName}/quality-timeline.jsonl
+
+## Trigger Detection
+
+  "I want to add..." / "Add a feature..."  -> suggest /sdd:new <name>
+  "Explore..." / "Investigate..."          -> suggest /sdd:explore <topic>
+  "Bootstrap SDD" / "Initialize"           -> suggest /sdd:init
+  "Continue" / "Next step"                 -> suggest /sdd:continue
+  "Fast forward" / "Plan everything"       -> suggest /sdd:ff
+  "Implement" / "Apply"                    -> suggest /sdd:apply
+  "Review"                                 -> suggest /sdd:review
+  "Verify"                                 -> suggest /sdd:verify
+  "Clean"                                  -> suggest /sdd:clean
+  "Archive" / "Close"                      -> suggest /sdd:archive
+
+================================================================================
+SECTION 6: COMMANDS REFERENCE
+================================================================================
+
+## Primary SDD Commands
+
+  /sdd:init               Bootstrap openspec/ in current project
+  /sdd:explore <topic>    Read-only codebase investigation
+  /sdd:new <name> [desc]  Start a new change (explore + propose)
+  /sdd:continue [name]    Run next dependency-ready phase
+  /sdd:ff <name>          Fast-forward all planning phases
+  /sdd:apply [name]       Implement code in batches (--tdd, --phase N, --fix-only)
+  /sdd:review [name]      Semantic code review against specs + AGENTS.md
+  /sdd:verify [name]      Technical quality gate (typecheck, lint, tests, security)
+  /sdd:clean [name]       Dead code removal + simplification
+  /sdd:archive [name]     Merge specs + archive + capture learnings
+  /sdd:analytics [name]   Quality analytics from phase delta tracking
+
+## Utility Commands
+
+  /commit-push-pr         Commit, push, and open a PR (post-SDD)
+  /learn                  Extract reusable patterns from current session
+  /evolve                 Cluster learned patterns into skills, commands, or agents
+  /instinct [action]      Manage learned patterns (status|import|export)
+  /verify [mode]          Quick project verification (quick|full|pre-commit|pre-pr|healthcheck|scan)
+  /build-fix [mode]       Emergency build fix outside SDD (types|lint|all)
+  /code-review [files]    Standalone code review with security audit
+
+## Common Workflows
+
+Full pipeline (careful, thorough):
+  /sdd:init               # once per project
+  /sdd:new my-feature "description"
+  /sdd:continue           # repeat until archive
+
+Fast planning, careful implementation:
+  /sdd:ff my-feature "description"
+  /sdd:apply my-feature
+  /sdd:continue           # review -> verify -> clean -> archive
+
+Quick fix with verification:
+  /sdd:new fix-bug "description"
+  /sdd:ff fix-bug
+  /sdd:apply fix-bug --fix-only
+  /sdd:verify fix-bug
+  /commit-push-pr
+
+## When NOT to Use SDD
+
+Skip SDD entirely for:
+  - One-line fixes: typos, version bumps, config value changes
+  - Trivial additions: single field to form, new route to existing pattern
+  - Pure research: use /sdd:explore standalone
+  - Prototyping / throwaway code
+
+Use /sdd:ff for:
+  - Medium-complexity changes: features touching 3-10 files
+  - Changes with clear requirements: still benefit from specs and tasks
+
+Use full pipeline for:
+  - Architecture changes: new modules, changed data flow, modified interfaces
+  - Cross-cutting concerns: changes across multiple domains
+  - High-risk modifications: security-sensitive code, payment flows, auth changes
+  - Team onboarding: when multiple people need to understand what was done and why
+
+================================================================================
+SECTION 7: SKILL — SDD-INIT
+================================================================================
+
+Name: sdd-init
+Purpose: Bootstrap Spec-Driven Development for a project. Detects tech stack,
+creates openspec/ directory structure, and generates config.yaml.
+
+## Execution Steps
+
+Step 1 — Check for Existing SDD Setup
+  - Check if openspec/ directory exists
+  - If exists and force=false: read config.yaml, report state, return already_initialized
+  - If exists and force=true: back up config.yaml, proceed with re-detection
+
+Step 2 — Detect Technology Stack
+  Files read for detection:
+    package.json       -> runtime (Node/Bun/Deno), dependencies, scripts
+    bun.lockb          -> Bun runtime confirmation
+    tsconfig.json      -> TypeScript configuration, strictness level
+    go.mod             -> Go module and dependencies
+    pyproject.toml     -> Python project and dependencies
+    Cargo.toml         -> Rust project and dependencies
+    docker-compose.yml -> infrastructure services (DB, cache, queue)
+    .env.example       -> environment variables and external services
+    CLAUDE.md          -> project conventions and rules
+    AGENTS.md          -> AI code-review rules
+
+Step 3 — Detect Architecture Patterns
+  - Monorepo detection (workspaces, turborepo, nx)
+  - Frontend/Backend split detection
+  - Database detection (pg, mysql2, drizzle-orm, prisma, etc.)
+  - State management detection (zustand, jotai, redux, tanstack-query, swr)
+
+Step 4 — Detect Conventions from CLAUDE.md
+  Extracts: type strictness, error handling, testing conventions, file organization,
+  code style, security rules, git conventions
+
+Step 5 — Create Directory Structure
+  openspec/
+    config.yaml
+    specs/
+    changes/
+      archive/
+
+Step 5b — Generate AGENTS.md (if not present)
+  Dual purpose:
+  1. AI code review rules (REJECT/REQUIRE/PREFER) extracted from CLAUDE.md
+  2. SDD global context for all agents — project architecture, openspec/ structure,
+     build/verify commands
+
+Step 6 — Generate config.yaml
+  Schema includes:
+    schema, version, generated_at
+    project: name, path, type
+    stack: runtime, language, frameworks, database, orm
+    architecture: pattern, workspaces, entry_points
+    conventions: type_strictness, error_handling, testing, file_organization, code_style
+    phases: proposal, specs, design, tasks, apply, review, verify, clean
+    contracts: preconditions and postconditions for all phases
+
+## contracts section (PARCER):
+
+  explore:
+    preconditions:
+      - config.yaml exists at openspec/config.yaml
+      - topic is non-empty string
+    postconditions:
+      - exploration.md written to openspec/changes/{changeName}/
+      - envelope contains relevant_files array with >= 1 entry
+
+  propose:
+    preconditions:
+      - exploration.md exists at openspec/changes/{changeName}/
+    postconditions:
+      - proposal.md written with all required_sections
+      - envelope contains approach and risk_summary
+
+  spec:
+    preconditions:
+      - proposal.md exists and was approved
+    postconditions:
+      - >= 1 spec file in openspec/changes/{changeName}/specs/
+      - each spec contains >= 1 GIVEN/WHEN/THEN scenario
+
+  design:
+    preconditions:
+      - proposal.md exists and was approved
+    postconditions:
+      - design.md written with all required_sections
+      - >= 1 interface definition with typed fields
+
+  tasks:
+    preconditions:
+      - spec files exist in specs/
+      - design.md exists
+    postconditions:
+      - tasks.md written with >= 1 phase containing >= 1 task
+      - each task references a spec scenario or design component
+
+  apply:
+    preconditions:
+      - tasks.md exists with >= 1 uncompleted task
+      - design.md exists
+      - spec files exist in specs/
+    postconditions:
+      - >= 1 task marked [x] in tasks.md
+      - buildStatus included in envelope
+      - all created/modified files listed in envelope
+
+  review:
+    preconditions:
+      - >= 1 task marked [x] in tasks.md
+      - files created/modified by apply exist on disk
+    postconditions:
+      - review-report.md written
+      - envelope contains verdict (PASSED or FAILED)
+      - all spec scenarios accounted for in spec coverage matrix
+
+  verify:
+    preconditions:
+      - review-report.md exists (or explicitly skipped)
+      - implementation files exist on disk
+    postconditions:
+      - verify-report.md written
+      - envelope contains buildHealth with all 4 checks
+      - verdict consistent with decision matrix
+
+  clean:
+    preconditions:
+      - verify verdict is PASS or PASS_WITH_WARNINGS
+    postconditions:
+      - no orphaned imports or dead code in changed files
+
+  archive:
+    preconditions:
+      - clean phase completed
+    postconditions:
+      - change directory moved to openspec/changes/archive/
+      - summary.md written with final metrics
+
+## Output Envelope:
+  phase: init
+  status: success | already_initialized | error
+  data:
+    project_name, stack_summary, architecture, conventions_source,
+    directories_created, config_path, warnings
+
+================================================================================
+SECTION 8: SKILL — SDD-EXPLORE
+================================================================================
+
+Name: sdd-explore
+Purpose: Investigate a codebase area or idea. Read-only analysis with risk assessment.
+
+## Structured Exploration Protocol (Semi-Formal Reasoning)
+
+For each relevant file, you MUST complete this reasoning template:
+
+  Pre-Read Hypothesis:
+    HYPOTHESIS  - What do you expect to find in this file, and why?
+    EVIDENCE    - What led you to this file?
+    CONFIDENCE  - HIGH | MEDIUM | LOW
+
+  Read and Observe:
+    OBSERVATIONS - Key findings with exact references (File:Line), min 2 per file
+
+  Hypothesis Update:
+    HYPOTHESIS STATUS - CONFIRMED | REFUTED | REFINED
+    Reason - 1-2 sentences
+
+  Next Action Reasoning:
+    NEXT ACTION JUSTIFICATION - Why is the next file the logical next step?
+
+## Execution Steps
+
+Step 1 — Load Project Context
+  - Read openspec/config.yaml
+  - Read CLAUDE.md for additional project rules
+
+Step 2 — Identify Search Strategy
+  Feature area      -> Glob for feature directory, Grep for imports/usage
+  Bug investigation -> Grep for error messages, stack trace patterns
+  Dependency analysis -> Read package.json, Grep for import statements
+  Performance concern -> Grep for hot paths, database queries
+  Security audit    -> Grep for user input handling, auth patterns
+  Architecture question -> Glob for directory structure, Read entry points
+  Data flow         -> Grep for type definitions, function signatures
+
+Step 3 — Execute Broad Search
+  - Use Glob to find relevant files
+  - Use Grep to find relevant code patterns
+  - Prioritize focus_paths if provided
+
+Step 4 — Deep Analysis (applying Structured Exploration Protocol above)
+
+Step 5 — Dependency Mapping
+  Entry Point (file path)
+    -> Depends on: [list of imports with file paths]
+    -> Depended on by: [list of files that import this]
+    -> External deps: [npm/external packages used]
+
+Step 6 — Risk Assessment
+  Blast radius    - How many files/modules are affected?
+  Type safety     - Are types well-defined or is there any/unknown leakage?
+  Test coverage   - Do test files exist? Do they cover edge cases?
+  Coupling        - How tightly coupled is this area?
+  Complexity      - Cyclomatic complexity, nesting depth, file length
+  Data integrity  - Are there DB operations that could corrupt data?
+  Breaking changes - Would changes break public APIs?
+  Security surface - Does this area handle user input, auth, sensitive data?
+
+  Each dimension rated: low | medium | high
+
+Step 7 — Approach Comparison (if applicable)
+  Table: Approach | Pros | Cons | Effort | Risk
+
+Step 8 — Produce Output Artifacts
+  If change_name provided: write openspec/changes/{change_name}/exploration.md
+  Exploration document structure:
+    # Exploration: {topic}
+    ## Current State
+    ## Relevant Files (table: path, purpose, lines, complexity, test coverage)
+    ## Dependency Map
+    ## Data Flow
+    ## Risk Assessment (table)
+    ## Approach Comparison
+    ## Recommendation
+    ## Open Questions
+
+## Detail Levels
+  Concise  - Bullet points, 30-50 lines, single overall risk rating
+  Standard - Paragraphs, 80-150 lines, full tables, simplified dependency map
+  Deep     - Comprehensive prose with code excerpts, 150-300 lines
+
+## Hard Rules
+  1. NEVER modify source code
+  2. Return concrete file paths (absolute)
+  3. Every claim must be evidence-based
+  4. Do not guess at runtime behavior — list as open questions
+  5. Time-box: focus on most relevant 15-20 files for large codebases
+
+================================================================================
+SECTION 9: SKILL — SDD-PROPOSE
+================================================================================
+
+Name: sdd-propose
+Purpose: Create a change proposal from exploration analysis. Produces proposal.md
+with intent, scope, approach, risks, and rollback plan.
+
+## Change Size Assessment
+  Small  - 1-3 files modified, no new deps, no DB -> single proposal
+  Medium - 4-10 files, may add deps, minor DB      -> single proposal
+  Large  - 10+ files, new deps, DB migration, new API -> recommend splitting
+
+## Required proposal.md Sections
+
+  # Proposal: {Change Name}
+  Change ID, Date, Status: draft
+
+  ## Intent
+  What is being changed and why (1-3 sentences, problem + value, no impl details)
+
+  ## Scope
+  ### In Scope
+  - Specific deliverable 1
+  - Specific deliverable 2
+  ### Out of Scope
+  - Excluded item 1 — brief reason why
+
+  ## Approach
+  High-level strategy (1-2 paragraphs)
+  ### Key Decisions (table: Decision | Choice | Rationale)
+
+  ## Affected Areas
+  Table: Module/Area | File Path (absolute) | Change Type | Risk Level
+  Total files affected: N, New: N, Modified: N, Deleted: N
+
+  ## Risks
+  Table: Risk | Probability | Impact | Mitigation
+  Overall Risk Level: low | medium | high
+
+  ## Rollback Plan (MANDATORY — never optional)
+  ### Steps to Rollback (specific git commands or file operations)
+  ### Rollback Verification
+
+  ## Dependencies
+  ### Internal Dependencies
+  ### External Dependencies (table: Package | Version | Purpose | Already Installed)
+  ### Infrastructure Dependencies (DB migration, env vars, new services)
+
+  ## Success Criteria (at least 3 measurable, verifiable criteria)
+  - [ ] All new endpoints return typed responses with proper error handling
+  - [ ] Unit tests cover all new functions
+  - [ ] bun run typecheck passes with zero errors
+  - [ ] bun run lint passes with zero warnings
+  - [ ] No any types, no as Type assertions, no @ts-ignore in new code
+
+  ## Open Questions
+
+## Hard Rules
+  1. Proposal is HUMAN-READABLE — write clearly, not in code-speak
+  2. Rollback Plan is NEVER optional
+  3. Scope MUST explicitly state what is OUT of scope
+  4. Success criteria must be verifiable
+  5. All file paths must be absolute
+  6. Never modify source code
+
+================================================================================
+SECTION 10: SKILL — SDD-SPEC
+================================================================================
+
+Name: sdd-spec
+Purpose: Write delta specifications (ADDED/MODIFIED/REMOVED requirements) with
+Given/When/Then scenarios using RFC 2119 keywords.
+
+## RFC 2119 Keyword Usage
+
+  MUST / SHALL     - Absolute requirement (core functionality, security rules)
+  MUST NOT / SHALL NOT - Absolute prohibition
+  SHOULD           - Recommended, valid reasons to deviate exist (best practices)
+  SHOULD NOT       - Discouraged, valid reasons to include exist
+  MAY              - Truly optional (nice-to-have features, extensions)
+
+Rules:
+  - Every MUST/SHALL needs at least one scenario proving compliance
+  - Every MUST NOT/SHALL NOT needs at least one scenario proving violation is handled
+  - SHOULD requirements need scenarios but failures are warnings, not blockers
+  - MAY requirements need scenarios to define behavior IF the option is implemented
+
+## Spec Domains
+
+  API              - auth-api, users-api, payments-api
+  Data             - user-schema, session-schema, migration
+  Business Logic   - auth-flow, permission-rules, pricing-engine
+  UI               - login-form, dashboard-layout, settings-page
+  Infrastructure   - database-connection, cache-layer, queue
+  Integration      - oauth-provider, email-service, webhook
+
+## Delta Spec File Structure
+
+  Path: openspec/changes/{change_name}/specs/{domain}/spec.md
+
+  # Delta Spec: {Domain Name}
+  Change, Date, Status: draft, Depends On: proposal.md
+
+  ## Context
+  Brief description of this domain's role in the change
+
+  ## ADDED Requirements
+  ### REQ-{DOMAIN}-{NNN}: {Requirement Title}
+  The system MUST {required behavior}.
+  The system SHOULD {recommended behavior}.
+  The system MAY {optional behavior}.
+
+  #### Scenario: {Scenario Title}
+  - GIVEN {precondition — specific, concrete state}
+  - WHEN {action — specific trigger or input}
+  - THEN {outcome — specific, observable, verifiable result}
+
+  ## MODIFIED Requirements
+  ### REQ-{DOMAIN}-{NNN}: {Requirement Title}
+  Previously: {reference to existing spec or current behavior}
+  The system MUST now {changed behavior} instead of {old behavior}.
+
+  ## REMOVED Requirements
+  ### REQ-{DOMAIN}-{NNN}: {Requirement Title}
+  Reason: {why removed}
+  Previously: {what the system used to do}
+  Migration: {how existing users/data are affected}
+
+  ## Acceptance Criteria Summary
+  Table: Requirement ID | Type | Priority | Scenarios
+
+## Scenario Quality Standards
+
+  SPECIFIC   - Use concrete values, not placeholders
+    Bad:  "GIVEN a user exists"
+    Good: "GIVEN a user with email 'test@example.com' and role 'admin' exists"
+
+  INDEPENDENT - Each scenario tests one behavior path
+    Bad:  "THEN user created AND email sent AND audit log updated"
+    Good: Three separate scenarios
+
+  VERIFIABLE - THEN clause must be observable
+    Bad:  "THEN the system handles the error gracefully"
+    Good: "THEN the API returns HTTP 400 with body { error: 'INVALID_EMAIL' }"
+
+## Hard Rules
+  1. Use RFC 2119 keywords precisely — MUST means MUST
+  2. Every requirement needs at least one testable scenario
+  3. Delta specs describe CHANGES, not the entire system
+  4. MODIFIED requirements MUST include "Previously:" reference
+  5. REMOVED requirements MUST include a reason and migration notes
+  6. Include negative scenarios — for every happy path, include at least one error case
+  7. Can run in PARALLEL with sdd-design (both depend only on proposal)
+
+================================================================================
+SECTION 11: SKILL — SDD-DESIGN
+================================================================================
+
+Name: sdd-design
+Purpose: Create technical design document capturing HOW the change is implemented.
+Architecture decisions, data flow, interfaces.
+
+## Execution Steps
+
+Step 1 — Load Project Context + Framework Skills
+  - Read openspec/config.yaml for stack, architecture, conventions
+  - Read CLAUDE.md for additional rules
+  - LOAD FRAMEWORK SKILLS: read ~/.claude/skills/frameworks/{framework}/SKILL.md
+    for every active framework BEFORE designing
+  - Note key constraints: no any, no as Type, Result<T,E>, max 600 lines, max 3 nesting
+
+Step 2 — Read Proposal and Optional Specs
+  - Extract approach, key decisions, affected areas, success criteria
+  - Map each requirement to a design component if specs available
+
+Step 3 — Analyze Existing Codebase Patterns (CRITICAL)
+  Design MUST follow existing patterns. Read source code to understand:
+  - Project structure: file organization, naming conventions
+  - Type patterns: where types are defined, shared type locations
+  - Error handling patterns: Result type definition and usage
+  - API patterns: how endpoints are defined, validation, response shapes
+  - Database patterns: repository/service structure, ORM usage
+  - Testing patterns: describe/it structure, mock patterns
+
+Step 4 — Make Architecture Decisions
+  For each significant design choice, evaluate alternatives.
+  Criteria: Consistency, Type safety, Testability, Simplicity, Performance, Maintainability
+  Every decision MUST have at least 2 alternatives with rationale.
+
+Step 5 — Design Data Flow (ASCII diagrams)
+  User Action
+    -> Frontend Component (file path)
+      -> API Call (endpoint, method, payload type)
+        -> Backend Handler (file path)
+          -> Validation (schema, types)
+            -> Business Logic (service file path)
+              -> Database Query (repository file path)
+                -> Response (type, shape)
+              <- Error Path (Result<T, E> with error type)
+
+Step 6 — Define Interfaces and Contracts
+  TypeScript types:
+    interface Create{Thing}Input {
+      readonly name: string
+      readonly email: string
+      readonly role: UserRole
+    }
+    type Create{Thing}Result = Result<{Thing}, Create{Thing}Error>
+    type Create{Thing}Error =
+      | { readonly code: 'DUPLICATE_EMAIL'; readonly email: string }
+      | { readonly code: 'INVALID_ROLE'; readonly role: string }
+
+  API contracts:
+    POST /api/{resource}
+      Request Body: Create{Thing}Input
+      Response 201: { data: {Thing} }
+      Response 400: { error: { code: string, message: string } }
+
+  Database schemas:
+    CREATE TABLE {table_name} (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+
+Step 7 — Plan Testing Strategy
+  Table: What to Test | Type | Approach | File Path | Maps to Requirement
+
+Step 8 — Write design.md
+  Path: openspec/changes/{change_name}/design.md
+
+  # Technical Design: {Change Name}
+  ## Technical Approach (2-3 paragraphs)
+  ## Architecture Decisions (table: # | Decision | Choice | Alternatives | Rationale)
+  ## Data Flow (ASCII diagrams per operation)
+  ## File Changes (table: # | File Path | Action | Description)
+  ## Interfaces and Contracts (TypeScript types, API contracts, DB schema)
+  ## Testing Strategy (table with requirement mapping)
+  ## Migration and Rollout
+  ## Open Questions
+
+## Hard Rules
+  1. Design MUST follow existing project patterns — read code first, then design
+  2. TypeScript projects: include actual compilable type definitions
+  3. Architecture decisions MUST have at least 2 alternatives
+  4. File Changes MUST list EVERY file that will be created, modified, or deleted
+  5. Testing strategy MUST cover each requirement
+  6. Can run in PARALLEL with sdd-spec
+  7. All file paths must be absolute
+  8. Never modify source code
+  9. Load framework skills before designing — required to avoid deprecated API patterns
+
+================================================================================
+SECTION 12: SKILL — SDD-TASKS
+================================================================================
+
+Name: sdd-tasks
+Purpose: Break design into phased, numbered implementation checklist. Tasks are
+grouped by phase and small enough for one session.
+
+## Prerequisites (strict)
+  - sdd-spec: MUST be complete
+  - sdd-design: MUST be complete
+  - sdd-propose: MUST be approved
+
+## Dependency Graph
+  Types/Interfaces -> Business Logic -> API Handlers -> UI Components
+       |                  |                |               |
+       v                  v                v               v
+   Type Tests       Logic Tests        API Tests         UI Tests
+
+## 5 Phases
+
+  Phase 1 — Foundation
+    - Type definitions and interfaces
+    - Error type variants
+    - Database schema migrations
+    - New dependency installation
+    - Configuration file updates
+    - Shared utility functions
+
+  Phase 2 — Core Implementation
+    - Business logic / service layer functions
+    - Database repository functions
+    - Core algorithms and data transformations
+    - Validation logic
+    - State management (stores, hooks)
+
+  Phase 3 — Integration and Wiring
+    - API route handlers / controllers
+    - Middleware (auth, validation, error handling)
+    - UI components and pages
+    - Provider wiring (DI, context providers)
+    - Event handlers and subscriptions
+
+  Phase 4 — Testing
+    - Unit tests for types and validation
+    - Unit tests for business logic
+    - Integration tests for API endpoints
+    - UI component tests
+    - Edge case and error path tests (from spec scenarios)
+
+  Phase 5 — Cleanup
+    - Remove deprecated code
+    - Update existing specs in openspec/specs/ (merge delta specs)
+    - Update documentation if affected
+    - Verify all success criteria from proposal
+    - Run full verification suite
+
+## Task Format
+
+  - [ ] {Phase}.{Number} {Action verb} — {specific file path}, {specific description}
+
+  Action verbs:
+    Create  - New file from scratch
+    Add     - New function, type, or export to existing file
+    Modify  - Change existing function or type signature
+    Update  - Change configuration, imports, or wiring
+    Remove  - Delete file, function, or deprecated code
+    Wire    - Connect modules (imports, providers, routes)
+    Test    - Write test cases for a specific module
+    Verify  - Run verification commands and check results
+    Migrate - Run database migration or data transformation
+
+## Parallelizable Task Marking
+
+  ### Phase 2: Core Implementation
+  > Tasks 2.1-2.3 can run in parallel.
+  - [ ] 2.1 Create — /abs/path/auth.service.ts, implement OAuth2 token exchange
+  - [ ] 2.2 Create — /abs/path/oauth.repository.ts, implement OAuth2 account storage
+  - [ ] 2.3 Create — /abs/path/oauth.validator.ts, implement callback validation
+  > Task 2.4 depends on 2.1 and 2.2.
+  - [ ] 2.4 Modify — /abs/path/user.service.ts, add linkOAuthAccount method
+
+## Requirement Traceability
+
+  - [ ] 4.1 Test — /abs/path/auth.service.test.ts, test OAuth2 token exchange
+                   (REQ-AUTH-001, REQ-AUTH-002)
+
+## tasks.md Structure
+
+  # Implementation Tasks: {Change Name}
+  ## Summary (total tasks, phases, estimated files, test cases planned)
+  ## Verification Commands (typecheck, lint, test)
+  ## Phase 1: Foundation (N tasks)
+    Phase 1 Checkpoint: {specific state after completion}
+  ## Phase 2: Core Implementation (N tasks)
+  ## Phase 3: Integration and Wiring (N tasks)
+  ## Phase 4: Testing (N tasks)
+  ## Phase 5: Cleanup (N tasks)
+  ## Requirement Traceability Matrix (table: REQ-ID | Task(s) | Test Task(s) | Status)
+  ## Success Criteria Checklist
+
+## Hard Rules
+  1. Tasks MUST reference specific file paths from design.md
+  2. Each task completable in one sdd-apply batch
+  3. Phases follow strict ordering: Foundation -> Core -> Integration -> Testing -> Cleanup
+  4. Use hierarchical numbering: 1.1, 1.2, 2.1, 2.2
+  5. Include testing tasks that map to spec scenarios
+  6. All file paths must be absolute
+  7. Traceability matrix must be complete
+
+================================================================================
+SECTION 13: SKILL — SDD-APPLY
+================================================================================
+
+Name: sdd-apply
+Purpose: Implement code following specs and design. Works in batches (one phase at
+a time). Includes build-fix loop.
+
+## Execution Steps
+
+Step 1 — Load Context
+  - Read openspec/config.yaml
+  - Read tasks.md (parse full task list, identify target phase)
+  - Read design.md (architecture decisions, interfaces, data flow, constraints)
+  - List files in specs/
+  - Read CLAUDE.md for project conventions
+
+Step 2 — Plan the Batch
+  - Filter tasks.md to only tasks in specified phase NOT already [x]
+  - Order tasks by dependency
+  - Identify spec files, existing source files, new files to create
+  - If --dry-run: output plan and STOP
+
+Step 3 — Implement Each Task
+
+  3a. Read the Spec Scenario
+    - Parse every GIVEN/WHEN/THEN scenario as acceptance criteria
+    - If ambiguous: note in envelope, do NOT guess
+
+  3b. Read Design Constraints
+    - Check design.md for interfaces, data types, architectural patterns
+    - If design is WRONG: note in envelope, do NOT silently deviate
+
+  3c. Read Existing Code (Structured Reading Protocol)
+    HYPOTHESIS  - What patterns, types, conventions do you expect?
+    EVIDENCE    - Which spec/design/file informed this expectation?
+    [READ FILE]
+    OBSERVATIONS - Key patterns found (File:Line for each pattern)
+    HYPOTHESIS STATUS - CONFIRMED | REFUTED | REFINED
+    IMPLEMENTATION IMPLICATION - How observations constrain your code
+
+    Your new code MUST follow the patterns observed.
+
+  3c-bis. Check for Shared Utilities
+    - Before creating new utility types, search src/shared/ for existing impl
+    - If no shared Result type exists, CREATE src/shared/result.ts first
+    - Utility used by 2+ modules belongs in shared, not duplicated
+
+  3d. Write Code
+
+  Type Safety Rules:
+    - No any — use unknown + type guards for external data
+    - as Type assertions: ALLOWED only inside type guard functions after runtime check
+    - No @ts-ignore or @ts-expect-error
+    - No non-null assertions (!)
+    - All exported functions: explicit return types
+    - All parameters: explicit types
+    - Use readonly unless mutation is required
+    - Multi-state objects: discriminated unions with discriminant field
+
+  Error Handling Rules:
+    - Use Result<T, E> for fallible operations (network, DB writes, parsing, validation)
+    - T | null or T | undefined acceptable for absence-of-data
+    - Real-time connections: reconnection with exponential backoff
+
+  Architecture Rules:
+    - Dependency injection for external resources (DB, HTTP, file system)
+    - Never import a global singleton — accept as constructor/factory parameter
+    - Files: aim for 200 lines, 600 lines hard max
+    - Create shared utility modules BEFORE consumers
+
+  Code Style Rules:
+    - No console.* in production code — use structured logger
+    - No magic numbers or strings — use named constants
+    - Max nesting depth: 3 levels, use early returns to flatten
+
+  Test Generation Policy (Standard Mode):
+    - Do NOT generate new test files unless task explicitly requires it
+    - Specs GIVEN/WHEN/THEN are the verification contract
+    - Update existing test files only if changes break assertions
+    - Do not add speculative test cases
+
+  3e. Mark Task Complete
+    - In tasks.md, change [ ] to [x]
+    - Add note if implementation deviated from design
+
+Step 4 — Build-Fix Loop with EET (Experience-Driven Early Termination)
+
+  EET Protocol (before each fix cycle from attempt #3 onward):
+    1. Capture Error Signature: {errorCode}:{affectedFile}:{errorCategory}
+    2. Query Engram (if available): mem_search for error signature
+    3. Evaluate Trajectory:
+       - If same error persisted despite >= 3 similar fixes in prior session
+         -> EARLY TERMINATION: set status FAILED, include Engram match reference
+       - If no match or Engram unavailable -> proceed normally
+    4. Save on Escalation: if 5 attempts exhausted without resolution, save pattern
+       to Engram via mem_save with topic key bug/build-fix/{errorSignature}
+
+  4a. TypeScript Type Check: bun run typecheck
+    - Fix root cause (not symptom)
+    - Max 5 fix attempts per unique error
+
+  4b. ESLint: bun run lint
+    - Use bun run lint:fix for auto-fixable issues
+    - Max 5 fix attempts per unique error
+
+  4c. Tests: bun test
+    - Fix failures in files YOU touched
+    - Note failures in files you did NOT touch (pre-existing)
+    - Max 5 fix attempts per unique test failure
+
+  4d. Format Check: bun run format:check
+    - Run bun run prettier --write <path> for affected files
+
+Step 5 — Return Structured Envelope
+  {
+    "agent": "sdd-apply",
+    "status": "COMPLETED | PARTIAL | FAILED",
+    "changeName", "phase",
+    "tasksCompleted": [...],
+    "tasksRemaining": [...],
+    "deviations": [{ task, description, resolution }],
+    "buildStatus": {
+      "typecheck": "PASS | FAIL", "typecheckErrors": 0,
+      "lint": "PASS | FAIL", "lintErrors": 0,
+      "tests": "PASS | FAIL", "testsPassed": 12, "testsFailed": 0,
+      "format": "PASS | FAIL"
+    },
+    "manualReviewNeeded": [{ file, reason, error }],
+    "filesCreated": [...],
+    "filesModified": [...]
+  }
+
+## Hard Rules (sdd-apply)
+  1. Read before write — never modify a file you haven't read
+  2. Follow existing patterns — code must look like it belongs in the codebase
+  3. No type suppression — no any, no @ts-ignore, no ! assertions
+  4. Result pattern for errors
+  5. Note deviations — if design is wrong, say so
+  6. Mark progress in tasks.md as you go, not at the end
+  7. Build-fix loop is mandatory — never return without running typecheck+lint+tests
+  8. Max 5 attempts per error before escalating to manual review
+  9. One batch = one phase (do not implement tasks from other phases)
+  10. Load domain skills before touching framework code
+
+## Error Recovery
+  Spec ambiguous           -> Implement most reasonable interpretation, flag in envelope
+  Design contradicts spec  -> Follow spec (source of truth), note deviation
+  Existing code has bugs   -> Do NOT fix unrelated bugs, note if they block your task
+  File exceeds 600 lines   -> Split into focused modules, update imports
+  No shared Result type    -> Create src/shared/result.ts before first consumer
+
+## TDD Mode (--tdd flag)
+  1. Red: write failing test encoding the spec scenario
+  2. Green: write minimum code to make test pass
+  3. Refactor: clean up without changing behavior
+  4. Repeat for each scenario
+
+  Use when: specs are underspecified, complex algorithmic edge cases, pure utility
+  functions with high combinatorial input space.
+
+================================================================================
+SECTION 14: SKILL — SDD-REVIEW
+================================================================================
+
+Name: sdd-review
+Purpose: Semantic code review comparing implementation against specs, design, and
+AGENTS.md rules. Reports issues but does NOT fix them.
+
+## Dynamic Review Rubric (Semi-Formal Certificate)
+
+Before reviewing any code, synthesize a change-specific rubric:
+  1. From spec files: each GIVEN/WHEN/THEN scenario -> one rubric criterion
+  2. From design.md: each architecture decision and interface contract -> one criterion
+  3. From AGENTS.md: REJECT -> CRITICAL, REQUIRE -> REQUIRED, PREFER -> PREFERRED
+  4. From CLAUDE.md: additional criteria not already covered
+
+Rubric format:
+  | # | Criterion | Source | Weight | Pass Condition |
+  Example:
+  | 1 | Valid credentials return session token | auth.spec:S1 | CRITICAL |
+        login() returns Ok(Session) on valid input |
+
+Weight levels:
+  CRITICAL  -> failure = review FAILED (spec scenarios + REJECT rules)
+  REQUIRED  -> failure = review FAILED (design contracts + REQUIRE rules)
+  PREFERRED -> failure = SUGGESTION only (PREFER rules + conventions)
+
+Post-review: score each rubric criterion with PASS/FAIL and evidence.
+
+## Execution Steps
+
+Step 1 — Load All Context
+  - Read tasks.md (identify completed tasks, extract files created/modified)
+  - Read design.md (architecture decisions, interfaces, module boundaries)
+  - Read all spec files (parse every GIVEN/WHEN/THEN)
+  - Read AGENTS.md (parse REJECT, REQUIRE, PREFER rules)
+  - Read CLAUDE.md for project-wide conventions
+  - LOAD FRAMEWORK SKILLS for every active framework
+
+Step 2 — Identify Changed Files
+  - Files listed in completed tasks
+  - Import chains (one level deep — direct imports only)
+
+Step 2b — Generate Dynamic Review Rubric (as above)
+
+Step 3 — Review Each File
+
+  3a. Spec Compliance — produce spec coverage matrix
+    | Spec File | Scenario | Status | Notes |
+    For each GIVEN/WHEN/THEN: is GIVEN handled? WHEN implemented? THEN correct?
+
+  3b. Design Compliance
+    - Module boundaries respected?
+    - Interfaces implemented as designed (every field and method)?
+    - Data flow correct?
+    - Dependency directions correct?
+
+  3c. Pattern Compliance (load framework skills first)
+    - Import style, error handling, naming, file structure
+
+  3d. AGENTS.md Rules
+    REJECT -> hard fails (blocking)
+    REQUIRE -> must be present (blocking)
+    PREFER -> soft suggestions (non-blocking)
+
+  3e. Naming and Readability
+    - Descriptive variable names (no single-letter outside loop counters)
+    - Function names are verbs
+    - Nesting depth within 3 levels
+    - Named constants for magic numbers/strings
+
+  3f. Security Quick Scan (OWASP Top 10)
+    - Injection: string concatenation in SQL, unsanitized user input
+    - XSS: innerHTML, dangerouslySetInnerHTML without sanitization
+    - Auth Bypass: missing auth checks on protected routes
+    - Secrets: hardcoded API keys, tokens, passwords
+    - Sensitive Data Exposure: logging sensitive fields, returning passwords
+    - SSRF: unvalidated URLs passed to fetch
+
+  3g. Error Handling
+    - Result<T, E> for all fallible operations?
+    - Empty catch blocks? (must always log with context)
+    - unknown in catch clauses with narrowing? (never any)
+    - Errors propagated correctly?
+
+  3h. Function Tracing Table (Semi-Formal Certificate)
+    | Function | File:Line | Parameter Types | Return Type | Verified Behavior |
+    MUST cover every exported function touched by the change.
+
+  3i. Data Flow Analysis (Semi-Formal Certificate)
+    For each critical data path:
+    1. CREATION: Where is data first created/received? (File:Line)
+    2. TRANSFORMATIONS: What functions modify it? (File:Line per step)
+    3. CONSUMPTION: Where is final form used? (File:Line)
+    4. INVARIANTS: What properties must hold throughout?
+
+  3j. Counter-Hypothesis Check (Semi-Formal Certificate)
+    For each CRITICAL function, actively search for failure evidence:
+    CLAIM   - "Function X could produce incorrect results when..."
+    EVIDENCE SOUGHT - What code path or edge case would trigger failure?
+    FINDING - VULNERABILITY FOUND | NO EVIDENCE OF FAILURE
+    At least one counter-hypothesis per critical function. Genuinely try to break it.
+
+Step 4 — Compile review-report.md
+  # Review Report: {changeName}
+  ## Summary
+  ## Review Rubric & Scores
+  ## Spec Coverage
+  ## Issues (table: # | Severity | Category | File | Line | Description)
+  ### REJECT Violations (Blocking)
+  ### REQUIRE Violations (Blocking)
+  ### PREFER Suggestions (Non-Blocking)
+  ## Function Tracing
+  ## Data Flow Analysis
+  ## Counter-Hypothesis Results
+  ## Spec Gaps
+  ## Security Findings
+  ## Verdict: PASSED | FAILED
+
+## Severity Classification
+  CRITICAL   - Spec not satisfied, REJECT violated, security vuln, data loss -> Blocks
+  WARNING    - REQUIRE violated, missing edge case, poor error handling       -> Blocks if REQUIRE
+  SUGGESTION - PREFER not followed, minor naming, style preference            -> Non-blocking
+
+## Hard Rules (sdd-review)
+  1. Do NOT fix issues — report only
+  2. REJECT and REQUIRE violations are blocking
+  3. Every issue must cite file:line
+  4. Review EVERY spec scenario (not a sample)
+  5. Security is always in scope
+  6. Load framework skills before reviewing (prevents false positives)
+
+================================================================================
+SECTION 15: SKILL — SDD-VERIFY
+================================================================================
+
+Name: sdd-verify
+Purpose: Technical quality gate. Runs typecheck, lint, tests, security audit.
+Compares implementation completeness against tasks/specs.
+
+## Execution Steps
+
+Step 1 — Completeness Check
+  - Count total tasks vs completed tasks in tasks.md
+  - Count spec scenarios vs scenarios with corresponding tests
+  - Verify design interfaces exist in codebase
+  - Check review-report.md for REJECT violations (auto-FAIL if any)
+
+Step 2 — TypeScript Type Check: bun run typecheck
+  - Capture full output (stdout and stderr)
+  - Count errors, extract file/line/error code/message per error
+  - PASS = 0 errors, FAIL = 1+ errors
+
+Step 3 — ESLint: bun run lint
+  - Count errors and warnings separately
+  - PASS = 0 errors (warnings OK), FAIL = 1+ errors
+
+Step 4 — Formatting: bun run format:check
+  - PASS = no formatting issues, FAIL = files need formatting
+
+Step 5 — Tests: bun test
+  - Extract: total, passed, failed, skipped
+  - For each failure: test name, file path, error message, stack trace
+
+Step 5b — Fault Localization Protocol (when tests fail) — Semi-Formal Reasoning
+
+  PREMISES (Test Semantics) — for each failing test:
+    1. Test identifier: describe > it path and file location
+    2. Setup (Arrange): preconditions, variables, mocks, fixtures with values
+    3. Action (Act): what function/operation is invoked (exact call signature)
+    4. Assertion (Assert): expected outcome (quote exact assertion)
+
+  DIVERGENCE CLAIMS — for each failing test:
+    CLAIM    - "Test expects [expected] (test file:line), but implementation at
+               [source file:line] produces [actual] because [root cause]."
+    EVIDENCE - Specific lines of source code causing the divergence
+    CONFIDENCE - HIGH | MEDIUM | LOW
+
+  Example:
+    CLAIM: Test expects Result.ok to be true for valid credentials (auth.test.ts:25),
+           but verifyPassword() at auth.service.ts:48 returns false because it
+           compares raw password against hash without using bcrypt.compare().
+    EVIDENCE: auth.service.ts:48 — return password === storedHash
+    CONFIDENCE: HIGH
+
+Step 6 — Static Analysis (scan changed files)
+  any (as type)            -> CRITICAL (banned in production code)
+  as <TypeName>            -> CRITICAL (type assertions banned, except as const)
+  @ts-ignore               -> CRITICAL (compiler suppression banned)
+  @ts-expect-error         -> CRITICAL (compiler suppression banned)
+  Non-null assertion !.    -> CRITICAL (banned)
+  console.log/error/warn   -> WARNING (use structured logger)
+  TODO / FIXME             -> WARNING (unresolved work items)
+  eval(                    -> CRITICAL (security: code injection risk)
+  new Function(            -> CRITICAL (security: code injection risk)
+  innerHTML                -> CRITICAL (security: XSS risk)
+  .then( chains > 2 deep   -> WARNING (prefer async/await)
+
+Step 7 — Security Scan
+  API key patterns near "key", "token", "secret"  -> CRITICAL (hardcoded secret)
+  password = "..." with literal string             -> CRITICAL (hardcoded password)
+  .env file committed                              -> CRITICAL
+  SQL string concatenation                         -> CRITICAL (SQL injection)
+  Unvalidated fetch() URL from user input          -> WARNING (SSRF)
+  Missing input validation on API route handlers   -> WARNING
+
+Step 8 — Dependency Audit: bun pm audit (if available)
+
+Step 9 — Compile verify-report.md
+  # Verification Report: {changeName}
+  ## Completeness (tasks, spec scenarios, design interfaces)
+  ## Build Health (table: Check | Status | Details)
+  ## Static Analysis (table: Category | Count | Severity)
+  ## Security (table: Category | Count | Severity)
+  ## Fault Localization (if tests failed — premises + divergence claims)
+  ## Issues Detail (table: # | Severity | Category | File | Line | Description)
+  ## Verdict Rationale
+
+## Verdict Decision Matrix
+  All checks PASS, all tasks complete, no CRITICAL issues  -> PASS
+  All checks PASS but WARNING-level issues exist           -> PASS WITH WARNINGS
+  Any CRITICAL issue (type error, test failure, security)  -> FAIL
+  Tasks incomplete (not all [x])                           -> FAIL
+  Spec scenarios without tests > 20% of total              -> PASS WITH WARNINGS
+  Spec scenarios without tests > 50% of total              -> FAIL
+
+## Hard Rules (sdd-verify)
+  1. Never fix issues — report only
+  2. Capture FULL command output (stderr too)
+  3. CRITICAL issues = FAIL verdict (no exceptions)
+  4. Run ALL checks even if typecheck fails
+  5. Distinguish pre-existing issues from change-introduced issues
+
+================================================================================
+SECTION 16: SKILL — SDD-CLEAN
+================================================================================
+
+Name: sdd-clean
+Purpose: Dead code removal, duplicate elimination, code simplification. Runs after
+verify passes. Only touches files related to the current change.
+
+## Scope
+  Primary  - Files directly created/modified in this change
+  Secondary - Files that import from primary files (one level of dependents)
+  Excluded - Everything else (do NOT refactor the whole project)
+
+## Analysis Per File
+
+  2a. Dead Code Detection
+    Unused imports           -> SAFE to remove
+    Unused local variables   -> SAFE to remove
+    Unused function params   -> CAREFUL (may be required by interface)
+    Unused private functions -> SAFE to remove
+    Unused exported functions -> CAREFUL (must verify no external callers)
+    Unreachable code         -> SAFE to remove
+    Dead branches            -> CAREFUL (verify condition analysis)
+    Commented-out code       -> SAFE to remove (not documentation comments)
+
+  2b. Duplicate Detection
+    Identical blocks (5+ lines in 2+ places)
+    Near-identical blocks (same structure, different var names)
+    Repeated patterns (same sequence of operations)
+
+    Rule of Three: only consolidate if pattern appears 3+ times,
+    OR if 2 occurrences are truly identical (same logic, same types).
+
+  2c. Complexity Analysis
+    Function length > 50 lines  -> flag for potential split
+    Nesting depth > 3 levels    -> flag for early-return refactor
+    Parameter count > 5         -> flag for options object pattern
+    Cyclomatic complexity > 10  -> flag for decomposition
+
+  2d. Simplification Opportunities
+    if (x !== null && x !== undefined) -> if (x != null) or optional chaining
+    x === null || x === undefined ? d : x -> x ?? d
+    if (condition) { return true; } else { return false; } -> return condition;
+    Nested ternaries               -> extract to named variables or early returns
+    arr.filter(...).length > 0     -> arr.some(...)
+    arr.filter(...).length === 0   -> !arr.some(...)
+    Manual null checks before access -> optional chaining (?.)
+    try { ... } catch (e) { throw e; } -> remove pointless try-catch
+
+## Risk-Based Approach
+  SAFE removals (apply directly, verify after batch):
+    unused imports, unused local variables, unreachable code, commented-out code
+
+  CAREFUL removals (verify after each one):
+    unused exported functions, unused parameters, dead branches, duplicates
+
+  RISKY removals (extra verification):
+    public API changes, functions used via dynamic imports, config references
+
+## Verification After Each Significant Removal
+  bun run typecheck -> if FAIL: REVERT and note
+  bun test          -> if FAIL: REVERT and note
+
+## What NOT to Clean
+  - Configuration files (tsconfig, eslint config, package.json)
+  - Third-party code (node_modules)
+  - Generated code (API clients, schema types)
+  - Test fixtures and mocks
+  - Feature flags
+  - Polyfills and compatibility code
+
+## clean-report.md Structure
+  # Clean Report: {changeName}
+  ## Files Cleaned (list of files and actions taken)
+  ## Lines Removed (total and per-file breakdown)
+  ## Actions Taken (counts: imports, dead functions, duplicates, complexity, reverted)
+  ## Build Status (typecheck, lint, tests)
+
+## Hard Rules (sdd-clean)
+  1. Scope is limited — primary + secondary only
+  2. Verify after every CAREFUL/RISKY removal
+  3. Revert on failure immediately
+  4. No premature abstraction (Rule of Three)
+  5. Preserve public API
+  6. Abort if verify-report verdict is FAIL
+  7. No new features — cleanup must not change behavior
+  8. Load framework skills before cleaning (prevents flagging idiomatic patterns)
+
+================================================================================
+SECTION 17: SKILL — SDD-ARCHIVE
+================================================================================
+
+Name: sdd-archive
+Purpose: Close a completed change. Merge delta specs into main specs, move change
+folder to archive, capture learnings.
+
+## Execution Steps
+
+Step 1 — Safety Check
+  - Read verify-report.md, parse verdict
+  - If FAIL or CRITICAL issues: ABORT immediately
+  - If PASS WITH WARNINGS: proceed but include warnings in archive summary
+  - Check review-report.md for unresolved REJECT violations: if any -> ABORT
+
+Step 2 — Read Change Artifacts
+  - proposal.md, exploration.md, tasks.md, design.md, specs/, verify-report.md,
+    review-report.md
+
+Step 3 — Merge Delta Specs into Main Specs (openspec/specs/)
+
+  ADDED Requirements:
+    - Find or create openspec/specs/{domain}.spec.md
+    - Append new requirement
+    - Add metadata comment: <!-- Added: YYYY-MM-DD from change: {changeName} -->
+
+  MODIFIED Requirements:
+    - Find matching requirement in main spec by name or ID
+    - Replace with updated version
+    - Keep old version as comment block for audit trail
+
+  REMOVED Requirements:
+    - WARN before removing (destructive)
+    - Comment out rather than delete:
+      <!-- Removed: YYYY-MM-DD from change: {changeName}
+      [removed requirement text]
+      -->
+
+Step 4 — Archive the Change
+  - Create archive directory: openspec/changes/archive/
+  - Move: openspec/changes/{changeName}/ -> openspec/changes/archive/YYYY-MM-DD-{changeName}/
+  - Create archive-manifest.md with:
+    # Archive Manifest: {changeName}
+    Archived date, Verdict, Tasks Completed, Specs Merged, Warnings
+    ## Change Summary
+    ## Key Decisions
+    ## Files Created
+    ## Files Modified
+
+Step 5 — Capture Learnings
+  Pattern detection: recurring challenges, design decisions, process improvements,
+  domain knowledge, gotchas
+
+  Save to ~/.claude/skills/learned/{pattern-name}.md if pattern is:
+  - Reusable (applicable beyond this specific change)
+  - Non-obvious (not in CLAUDE.md or standard conventions)
+  - Actionable (provides a clear recommendation)
+
+  Learning file structure:
+    ---
+    name: {pattern-name}
+    source: sdd-archive
+    date: YYYY-MM-DD
+    change: {changeName}
+    ---
+    # {Pattern Name}
+    ## Context (when does this apply?)
+    ## Pattern (what should you do?)
+    ## Example (concrete code or process example)
+    ## Anti-pattern (what to avoid)
+
+## Hard Rules (sdd-archive)
+  1. NEVER archive a FAIL verdict
+  2. NEVER archive with unresolved REJECT violations
+  3. Spec merge is additive by default
+  4. Archive is permanent — never delete
+  5. Main specs are source of truth after merge
+  6. Preserve previous versions as comment blocks
+  7. No code changes in this phase
+
+## Archive Folder Structure After Archiving
+  openspec/
+    specs/                          # Main specs (source of truth, updated)
+      auth.spec.md
+      billing.spec.md
+    changes/
+      active-change/                # Still in progress
+      archive/
+        2026-02-22-auth-lockout/    # Archived change
+          proposal.md, exploration.md, tasks.md, design.md, specs/,
+          verify-report.md, review-report.md, archive-manifest.md
+
+================================================================================
+SECTION 18: SKILL — SDD-ANALYTICS
+================================================================================
+
+Name: sdd-analytics
+Purpose: Quality analytics from phase delta tracking data. Reads quality-timeline
+.jsonl files, computes deltas between consecutive phases, and generates markdown
+reports showing quality curves, phase value rankings, and insights.
+
+## QualitySnapshot Schema (TypeScript)
+
+  interface QualitySnapshot {
+    changeName: string
+    phase: "explore"|"propose"|"spec"|"design"|"tasks"|"apply"|"review"|"verify"|"clean"|"archive"
+    timestamp: string              // ISO 8601
+    agentStatus: "COMPLETED"|"FAILED"|"SKIPPED"
+    completeness: {
+      tasksCompleted: number | null
+      tasksTotal: number | null
+      specsCovered: number | null
+      specsTotal: number | null
+    }
+    buildHealth: {
+      typecheck: "PASS"|"FAIL"|null
+      typecheckErrors: number | null
+      lint: "PASS"|"FAIL"|null
+      lintErrors: number | null
+      lintWarnings: number | null
+      format: "PASS"|"FAIL"|null
+      tests: "PASS"|"FAIL"|null
+      testsPassed: number | null
+      testsFailed: number | null
+    }
+    staticAnalysis: {
+      bannedAny, typeAssertions, compilerSuppressions, consoleUsage, todoFixme
+    }
+    security: {
+      hardcodedSecrets, injectionRisks, xssVectors, missingValidation
+    }
+    issues: { critical, warning, suggestion }
+    scope: { filesCreated, filesModified, filesTotal }
+    phaseSpecific: Record<string, unknown>  // full envelope passthrough
+  }
+
+## Extraction Mapping Per Phase
+
+  Planning phases (mostly null):
+    explore  -> agentStatus only
+    propose  -> agentStatus only
+    spec     -> agentStatus + completeness.specsTotal
+    design   -> agentStatus only
+    tasks    -> agentStatus + completeness.tasksTotal
+
+  Rich snapshot phases:
+    apply    -> agentStatus, buildHealth.*, completeness.tasksCompleted/Total,
+                scope.filesCreated/Modified
+    review   -> agentStatus, issues.*, scope.filesTotal, completeness.specsCovered/Total
+    verify   -> agentStatus, completeness.*, buildHealth.*, staticAnalysis.*, security.*,
+                issues.*
+    clean    -> agentStatus, phaseSpecific (filesRemoved, linesRemoved)
+    archive  -> agentStatus, phaseSpecific (archivePath)
+
+## Delta Computation
+
+  Numeric: delta = snapshot[N].field - snapshot[N-1].field
+
+  Direction:
+    Positive delta = improvement for: completeness.*, testsPassed, scope.filesTotal
+    Negative delta = improvement for: issues.critical, typecheckErrors, lintErrors,
+                                       testsFailed, staticAnalysis.*, security.*
+
+  Status fields: PASS=1, FAIL=0, null=-1
+    Delta +1 (FAIL -> PASS) = improvement
+    Delta -1 (PASS -> FAIL) = regression
+
+  Null propagation: if either snapshot has null, delta = null (display as —)
+
+## Composite Quality Score (0-100)
+
+  score = (completeness_ratio * 30) + (build_health_ratio * 30) +
+          (issue_penalty * 20) + (security_penalty * 20)
+
+  where:
+    completeness_ratio = tasksCompleted / tasksTotal
+    build_health_ratio = pass_count / check_count (typecheck, lint, format, tests)
+    issue_penalty = max(0, 20 - (critical * 10 + warning * 3))
+    security_penalty = max(0, 20 - (hardcodedSecrets * 20 + injectionRisks * 10 + xssVectors * 10))
+
+## Report Modes
+
+  single    - Analyze one change's quality timeline
+              Input: openspec/changes/{changeName}/quality-timeline.jsonl
+              Output: openspec/analytics/{changeName}-report.md
+
+  aggregate - Analyze all tracked changes in the project
+              Input: openspec/changes/*/quality-timeline.jsonl (excludes archive/)
+              Output: openspec/analytics/aggregate-report.md
+
+  compare   - Side-by-side comparison of multiple changes (2-4 names)
+              Output: openspec/analytics/compare-report.md
+
+## Sample Single Report Structure
+
+  # Quality Report: {changeName}
+  ## Quality Curve
+    | Phase       | Score | Δ  | Status    | Completeness | Build | Issues |
+    | explore     | —     | —  | COMPLETED | —/—          | —     | —      |
+    | spec        | 10    | —  | COMPLETED | 0/15         | —     | —      |
+    | tasks       | 15    | +5 | COMPLETED | 0/12         | —     | —      |
+    | apply (b1)  | 45    | +30| COMPLETED | 6/12         | ✓/✗/✓ | 0/2/0 |
+    | apply (b2)  | 68    | +23| COMPLETED | 12/12        | ✓/✓/✓ | 0/1/0 |
+    | review      | 62    | -6 | COMPLETED | 12/12        | ✓/✓/✓ | 2/5/3 |
+    | verify      | 70    | +8 | COMPLETED | 12/12        | ✓/✓/✓ | 0/2/1 |
+    | clean       | 75    | +5 | COMPLETED | 12/12        | ✓/✓/✓ | 0/1/0 |
+
+  ## Phase Deltas (table of score changes between phases)
+  ## Insights (highest value phase, regressions, cleanup impact, final score)
+  ## Phase Value Ranking (ranked by Δ)
+
+## Hard Rules (sdd-analytics)
+  1. Never modify source code, specs, or timeline files
+  2. Never block on malformed data — skip invalid JSONL lines
+  3. Null means unknown, not zero — display as —
+  4. Review's negative delta is expected (review discovers issues)
+  5. Always create openspec/analytics/ if missing
+  6. No timeline = graceful message, never error out
+
+================================================================================
+SECTION 19: PROJECT STRUCTURE
+================================================================================
+
+~/.claude/
+  skills/
+    sdd/                    # 11 SDD phase skills
+      sdd-init/SKILL.md
+      sdd-explore/SKILL.md
+      sdd-propose/SKILL.md
+      sdd-spec/SKILL.md
+      sdd-design/SKILL.md
+      sdd-tasks/SKILL.md
+      sdd-apply/SKILL.md
+      sdd-review/SKILL.md
+      sdd-verify/SKILL.md
+      sdd-clean/SKILL.md
+      sdd-archive/SKILL.md
+      sdd-analytics/SKILL.md
+    frameworks/             # 14 framework skills (lazy-loaded)
+      react-19/SKILL.md
+      tailwind-4/SKILL.md
+      typescript/SKILL.md
+      zod-4/SKILL.md
+      zustand-5/SKILL.md
+      playwright/SKILL.md
+      nextjs-15/SKILL.md
+      ai-sdk-5/SKILL.md
+      github-pr/SKILL.md
+      django-drf/SKILL.md
+      pytest/SKILL.md
+      jira-epic/SKILL.md
+      jira-task/SKILL.md
+      skill-creator/SKILL.md
+    analysis/               # Support skills
+      architect/SKILL.md
+      build-validator/SKILL.md
+      code-simplifier/SKILL.md
+      verify-app/SKILL.md
+    learned/                # Patterns extracted at runtime (grows over time)
+  commands/                 # 18 slash commands
+    sdd-init.md
+    sdd-explore.md
+    sdd-new.md
+    sdd-continue.md
+    sdd-ff.md
+    sdd-apply.md
+    sdd-review.md
+    sdd-verify.md
+    sdd-clean.md
+    sdd-archive.md
+    sdd-analytics.md
+    commit-push-pr.md
+    learn.md
+    evolve.md
+    instinct.md
+    verify.md
+    build-fix.md
+    code-review.md
+
+your-project/
+  openspec/                 # Created by /sdd:init
+    config.yaml             # Auto-detected project config
+    specs/                  # Main specs (merged from deltas, source of truth)
+    changes/                # Active changes (one dir per change)
+      feature-name/
+        exploration.md
+        proposal.md
+        specs/
+          domain/spec.md    # Delta specs grouped by domain
+        design.md
+        tasks.md
+        review-report.md
+        verify-report.md
+        clean-report.md
+        quality-timeline.jsonl  # Phase delta tracking
+      archive/              # Completed changes (audit trail, never delete)
+        2026-02-22-feature-name/
+          archive-manifest.md
+          [all phase artifacts preserved]
+  CLAUDE.md                 # Project instructions + SDD orchestrator protocol
+  AGENTS.md                 # Review rules (REJECT/REQUIRE/PREFER)
+
+================================================================================
+SECTION 20: BEFORE AND AFTER COMPARISON
+================================================================================
+
+## Before SDD: Standard Workflow
+
+1. Open Claude Code
+2. "Hey, add a user dashboard with analytics charts"
+3. Claude reads the entire codebase (fills context window)
+4. Claude writes a bunch of files
+5. You find type errors — ask Claude to fix them
+6. Claude fixes types but breaks something else (context is polluted)
+7. You notice it used React 18 patterns (wrong version)
+8. You ask for a fix, Claude now has 50K tokens of conversation history
+9. Context compacts — Claude forgets the type constraint from step 5
+10. You start a new session and explain everything again
+11. New session uses different naming conventions
+12. Repeat steps 5-11 until exhausted
+
+Result: Working code (eventually), no documentation, no specs, no record of why
+decisions were made, inconsistent patterns, and knowledge trapped in a conversation
+that is about to be garbage collected.
+
+## After SDD: Structured Workflow
+
+1. /sdd:new add-user-dashboard "User analytics dashboard"
+   -> explore: Maps existing components, store shape, routing patterns
+   -> propose: "Add dashboard at /dashboard with 3 chart types using recharts"
+   -> You review and approve the proposal
+
+2. /sdd:continue
+   -> spec: MUST render line/bar/pie charts, MUST use existing theme tokens,
+            SHOULD support date range filtering, Given/When/Then for each chart
+   -> design: Component tree, data flow, store slice, route config
+   -> You review specs and design
+
+3. /sdd:continue
+   -> tasks: Phase 1 (store slice), Phase 2 (chart components),
+             Phase 3 (dashboard page), Phase 4 (routing)
+
+4. /sdd:apply (runs each phase with build-fix loop)
+   -> Each phase: implement -> typecheck -> fix -> next phase
+   -> Sub-agent sees only tasks + spec + design + target files
+
+5. /sdd:continue
+   -> review: Checks code against specs and AGENTS.md rules
+   -> verify: typecheck pass, lint pass, tests pass
+   -> clean: Removes unused imports, dead code from migration
+   -> archive: Specs merged, change archived with learnings
+
+Result: Working code, delta specs documenting every requirement, design docs
+explaining every decision, a review report confirming compliance, a verify report
+proving quality, and archived learnings that Engram will surface in future sessions.
+
+================================================================================
+SECTION 21: INSTALLATION
+================================================================================
+
+curl -sSL https://raw.githubusercontent.com/rechedev9/sdd-workflow/master/install.sh | bash
+
+Or clone and run locally:
+  git clone https://github.com/rechedev9/sdd-workflow
+  cd sdd-workflow && ./install.sh
+
+Then add the SDD orchestrator protocol to your project's CLAUDE.md:
+  cat sdd-workflow/claude-md-snippet.md >> CLAUDE.md
+
+Then open any project and run:
+  /sdd:init
+
+Prerequisites:
+  - Claude Code CLI installed and authenticated
+  - Git initialized in your project
+  - (Optional) Engram MCP for persistent memory
+
+================================================================================
+SECTION 22: ECOSYSTEM AT A GLANCE
+================================================================================
+
+Component           Count   Total Lines   Description
+SDD Phase Skills    12      3,762         Core pipeline: init through archive + analytics
+Framework Skills    14      ~3,029        Version-specific patterns (React 19, Tailwind 4, etc.)
+Slash Commands      18      ~1,550        SDD commands + utility commands
+Support Skills      8+      ~1,617        Analysis, knowledge management, workflow utilities
+Learned Patterns    4+      grows         Patterns extracted from real usage via /learn
+Total Ecosystem     55+     ~9,800+
+
+Core insight: You do not need a smarter model. You need a smarter workflow.
+
+================================================================================
+END OF DOCUMENT
+================================================================================

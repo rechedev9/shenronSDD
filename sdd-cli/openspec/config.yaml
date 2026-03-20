@@ -1,0 +1,11 @@
+project_name: sdd-cli
+stack:
+  language: go
+  build_tool: go
+  manifests: [go.mod]
+skills_path: /home/reche/projects/SDDworkflow/skills/sdd
+commands:
+  build: "/usr/local/go/bin/go build ./..."
+  test: "/usr/local/go/bin/go test ./..."
+  lint: "echo lint-ok"
+  format: ""

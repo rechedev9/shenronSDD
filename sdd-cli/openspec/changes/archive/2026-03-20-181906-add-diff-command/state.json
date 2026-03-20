@@ -1,0 +1,19 @@
+{
+  "name": "add-diff-command",
+  "description": "Add sdd diff command that shows files modified during a change by comparing git state",
+  "current_phase": "archive",
+  "phases": {
+    "apply": "completed",
+    "archive": "pending",
+    "clean": "completed",
+    "design": "completed",
+    "explore": "completed",
+    "propose": "completed",
+    "review": "completed",
+    "spec": "completed",
+    "tasks": "completed",
+    "verify": "completed"
+  },
+  "created_at": "2026-03-20T18:09:05.25946649Z",
+  "updated_at": "2026-03-20T18:19:01.89482687Z"
+}

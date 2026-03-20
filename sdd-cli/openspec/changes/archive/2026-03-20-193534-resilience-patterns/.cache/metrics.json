@@ -1,0 +1,15 @@
+{
+  "version": 3,
+  "phases": {
+    "explore": {
+      "bytes": 17372,
+      "tokens": 4343,
+      "cached": false,
+      "duration_ms": 18
+    }
+  },
+  "total_bytes": 17372,
+  "total_tokens": 4343,
+  "cache_hits": 0,
+  "cache_misses": 1
+}

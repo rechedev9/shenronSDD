@@ -1,0 +1,20 @@
+{
+  "name": "smart-skip",
+  "description": "Implement smart-skip: skip verify if no source files changed since last pass, bounded concurrent spec+design assembly, and structured slog logging replacing fmt.Fprintf",
+  "current_phase": "archive",
+  "phases": {
+    "apply": "completed",
+    "archive": "pending",
+    "clean": "completed",
+    "design": "completed",
+    "explore": "completed",
+    "propose": "completed",
+    "review": "completed",
+    "spec": "completed",
+    "tasks": "completed",
+    "verify": "completed"
+  },
+  "created_at": "2026-03-20T19:10:43.124172848Z",
+  "updated_at": "2026-03-20T19:20:36.88467205Z",
+  "base_ref": "d109fb599033b295a8a371856be74a01a83c003c"
+}
