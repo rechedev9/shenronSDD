@@ -88,6 +88,7 @@ func resolveDir(dir string) (string, error) {
 }
 
 func runNew(args []string, stdout io.Writer, stderr io.Writer) error {
+	args, verbosity := ParseVerbosityFlags(args)
 	jsonOut := false
 	var positional []string
 	for _, arg := range args {
@@ -169,6 +170,7 @@ func runNew(args []string, stdout io.Writer, stderr io.Writer) error {
 		Config:      cfg,
 		SkillsPath:  cfg.SkillsPath,
 		Stderr:      stderr,
+		Verbosity:   int(verbosity),
 	}
 
 	if err := sddctx.Assemble(stdout, state.PhaseExplore, p); err != nil {
@@ -180,6 +182,7 @@ func runNew(args []string, stdout io.Writer, stderr io.Writer) error {
 }
 
 func runContext(args []string, stdout io.Writer, stderr io.Writer) error {
+	args, verbosity := ParseVerbosityFlags(args)
 	jsonOut := false
 	var positional []string
 	for _, arg := range args {
@@ -231,6 +234,7 @@ func runContext(args []string, stdout io.Writer, stderr io.Writer) error {
 		Config:      cfg,
 		SkillsPath:  cfg.SkillsPath,
 		Stderr:      stderr,
+		Verbosity:   int(verbosity),
 	}
 
 	// Choose target writer: buffer for JSON mode, stdout otherwise.
@@ -247,7 +251,10 @@ func runContext(args []string, stdout io.Writer, stderr io.Writer) error {
 	var phase string
 	if len(positional) >= 2 {
 		// Explicit phase arg → single assembly.
-		ph := state.Phase(positional[1])
+		ph, err := state.ResolvePhase(positional[1])
+		if err != nil {
+			return errs.WriteError(stderr, "context", err)
+		}
 		phase = positional[1]
 		if err := sddctx.Assemble(target, ph, p); err != nil {
 			return errs.WriteError(stderr, "context", err)
@@ -309,7 +316,10 @@ func runWrite(args []string, stdout io.Writer, stderr io.Writer) error {
 
 	name := args[0]
 	phaseStr := args[1]
-	phase := state.Phase(phaseStr)
+	phase, err := state.ResolvePhase(phaseStr)
+	if err != nil {
+		return errs.WriteError(stderr, "write", err)
+	}
 
 	// Resolve change directory.
 	changeDir, err := resolveChangeDir(name)

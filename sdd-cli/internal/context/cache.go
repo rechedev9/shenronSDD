@@ -227,7 +227,10 @@ type contextMetrics struct {
 
 // writeMetrics prints context metrics to stderr.
 // and appends to the cumulative metrics log for the change.
-func writeMetrics(w io.Writer, m *contextMetrics) {
+func writeMetrics(w io.Writer, m *contextMetrics, verbosity int) {
+	if verbosity < 0 {
+		return
+	}
 	source := "assembled"
 	if m.Cached {
 		source = "cached"
@@ -337,4 +340,34 @@ func formatBytes(b int) string {
 		return fmt.Sprintf("%dB", b)
 	}
 	return fmt.Sprintf("%dKB", b/1024)
+}
+
+// CheckCacheIntegrity counts stale cache entries in a change directory.
+// Returns the number of .hash files whose stored hash no longer matches
+// the current input hash (content drift).
+func CheckCacheIntegrity(changeDir, skillsPath string) (int, error) {
+	stale := 0
+	hashFiles, err := filepath.Glob(filepath.Join(cacheDir(changeDir), "*.hash"))
+	if err != nil || len(hashFiles) == 0 {
+		return 0, nil
+	}
+	for _, hf := range hashFiles {
+		phase := strings.TrimSuffix(filepath.Base(hf), ".hash")
+		raw, err := os.ReadFile(hf)
+		if err != nil {
+			continue
+		}
+		stored := strings.TrimSpace(string(raw))
+		storedHash, _, ok := strings.Cut(stored, "|")
+		if !ok {
+			stale++
+			continue
+		}
+		inputs := phaseInputs[phase]
+		current := inputHash(changeDir, inputs, skillsPath, phase)
+		if storedHash != current {
+			stale++
+		}
+	}
+	return stale, nil
 }

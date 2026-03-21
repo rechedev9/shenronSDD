@@ -34,6 +34,7 @@ type Params struct {
 	Config      *config.Config
 	SkillsPath  string
 	Stderr      io.Writer // for metrics output; nil = discard
+	Verbosity int       // -1=quiet, 0=default, 1=verbose, 2=debug
 }
 
 // dispatchers maps phases to their assembler functions.
@@ -64,7 +65,7 @@ func Assemble(w io.Writer, phase state.Phase, p *Params) error {
 	if cached, ok := tryCachedContext(p.ChangeDir, phaseStr, p.SkillsPath); ok {
 		size := len(cached)
 		w.Write(cached)
-		emitMetrics(p.Stderr, p.ChangeDir, phaseStr, size, true, start)
+		emitMetrics(p.Stderr, p.ChangeDir, phaseStr, size, true, start, p.Verbosity)
 		return nil
 	}
 
@@ -90,12 +91,12 @@ func Assemble(w io.Writer, phase state.Phase, p *Params) error {
 	// Cache for next time (best-effort).
 	_ = saveContextCache(p.ChangeDir, phaseStr, p.SkillsPath, content)
 
-	emitMetrics(p.Stderr, p.ChangeDir, phaseStr, size, false, start)
+	emitMetrics(p.Stderr, p.ChangeDir, phaseStr, size, false, start, p.Verbosity)
 	return nil
 }
 
 // emitMetrics writes context metrics to stderr and records cumulative metrics.
-func emitMetrics(stderr io.Writer, changeDir, phase string, size int, cached bool, start time.Time) {
+func emitMetrics(stderr io.Writer, changeDir, phase string, size int, cached bool, start time.Time, verbosity int) {
 	m := &contextMetrics{
 		Phase:      phase,
 		Bytes:      size,
@@ -110,7 +111,7 @@ func emitMetrics(stderr io.Writer, changeDir, phase string, size int, cached boo
 	if stderr == nil {
 		return
 	}
-	writeMetrics(stderr, m)
+	writeMetrics(stderr, m, verbosity)
 }
 
 // AssembleConcurrent assembles multiple phases in parallel and writes

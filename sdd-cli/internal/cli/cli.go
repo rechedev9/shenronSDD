@@ -49,6 +49,8 @@ func Run(args []string, stdout, stderr io.Writer) error {
 		return runHealth(rest, stdout, stderr)
 	case "dump":
 		return runDump(rest, stdout, stderr)
+	case "doctor":
+		return runDoctor(rest, stdout, stderr)
 	case "--version", "version":
 		fmt.Fprintln(stdout, version)
 		return nil
@@ -90,6 +92,7 @@ func printHelp(w io.Writer) {
 	fmt.Fprintln(w, "  diff <name>       List files changed since 'sdd new' was run")
 	fmt.Fprintln(w, "  health <name>     Pipeline health: progress, cache stats, warnings")
 	fmt.Fprintln(w, "  dump <name>       Dump full debug state as JSON")
+	fmt.Fprintln(w, "  doctor            Diagnose config, cache, skills, and tools")
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Other:")
 	fmt.Fprintln(w, "  version           Print version")
@@ -240,6 +243,19 @@ Arguments:
 
 Output: JSON debug snapshot.
 Exit:   0 success, 1 error, 2 usage`,
+
+	"doctor": `sdd doctor — Diagnostic health check
+
+Usage: sdd doctor [--json]
+
+Validates project setup: config syntax and version, cache integrity,
+orphaned .pending files, skills path, and build tool availability.
+
+Flags:
+  --json        Output results as JSON
+
+Output: Aligned table (default) or JSON with per-check pass/warn/fail status.
+Exit:   0 all checks pass or warn, 1 any check fails, 2 usage`,
 
 	"archive": `sdd archive — Archive completed change
 
