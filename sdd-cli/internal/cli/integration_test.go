@@ -79,13 +79,13 @@ func TestEndToEndPipeline(t *testing.T) {
 		phase   state.Phase
 		content string
 	}{
-		{state.PhaseExplore, "# Exploration\n\nFound login-related files."},
-		{state.PhasePropose, "# Proposal\n\nAdd login page with OAuth."},
+		{state.PhaseExplore, "# Exploration\n\n## Current State\nLogin page exists.\n\n## Relevant Files\n- login.go"},
+		{state.PhasePropose, "# Proposal\n\n## Intent\nAdd OAuth login.\n\n## Scope\nLogin page only."},
 		{state.PhaseSpec, "# Spec\n\n## Requirements\n- OAuth login"},
 		{state.PhaseDesign, "# Design\n\n## Architecture\n- LoginPage component"},
 		{state.PhaseTasks, "# Tasks\n\n- [ ] Create LoginPage\n- [ ] Add OAuth flow"},
 		{state.PhaseApply, "# Tasks\n\n- [x] Create LoginPage\n- [x] Add OAuth flow"},
-		{state.PhaseReview, "# Review Report\n\nAll changes look good."},
+		{state.PhaseReview, "# Review Report\n\n## Analysis\nReviewed login.go:15 and oauth.go:42\n\nVerdict: PASS"},
 	}
 
 	for _, pp := range planningPhases {
@@ -200,7 +200,7 @@ func TestEndToEndPipeline(t *testing.T) {
 		}
 
 		// Write clean.
-		if err := artifacts.WritePending(changeDir, state.PhaseClean, []byte("# Clean Report\nNo issues.")); err != nil {
+		if err := artifacts.WritePending(changeDir, state.PhaseClean, []byte("# Clean Report\n\n## Summary\nNo issues found.")); err != nil {
 			t.Fatalf("write pending clean: %v", err)
 		}
 		stdout.Reset()
@@ -287,7 +287,7 @@ func TestEdgeCaseWrongPhaseWrite(t *testing.T) {
 	changeDir := filepath.Join(root, "openspec", "changes", "feat")
 
 	// Try to write "apply" — should fail (prerequisites not met).
-	if err := artifacts.WritePending(changeDir, state.PhaseApply, []byte("# Apply")); err != nil {
+	if err := artifacts.WritePending(changeDir, state.PhaseApply, []byte("# Apply\n\n- [x] Task done")); err != nil {
 		t.Fatal(err)
 	}
 

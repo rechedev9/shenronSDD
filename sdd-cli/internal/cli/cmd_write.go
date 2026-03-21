@@ -15,11 +15,18 @@ import (
 
 func runWrite(args []string, stdout io.Writer, stderr io.Writer) error {
 	if len(args) < 2 {
-		return errs.Usage("usage: sdd write <name> <phase>")
+		return errs.Usage("usage: sdd write <name> <phase> [--force]")
 	}
 
 	name := args[0]
 	phaseStr := args[1]
+	force := false
+	for _, arg := range args[2:] {
+		switch arg {
+		case "--force", "-f":
+			force = true
+		}
+	}
 	phase, err := state.ResolvePhase(phaseStr)
 	if err != nil {
 		return errs.WriteError(stderr, "write", err)
@@ -47,7 +54,7 @@ func runWrite(args []string, stdout io.Writer, stderr io.Writer) error {
 	prevPhase := string(st.CurrentPhase)
 
 	// Promote pending artifact.
-	promoted, err := artifacts.Promote(changeDir, phase)
+	promoted, err := artifacts.Promote(changeDir, phase, force)
 	if err != nil {
 		return errs.WriteError(stderr, "write", err)
 	}

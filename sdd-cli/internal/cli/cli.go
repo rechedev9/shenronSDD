@@ -167,16 +167,23 @@ Exit:   0 success, 1 error, 2 usage`,
 
 	"write": `sdd write — Promote artifact and advance state
 
-Usage: sdd write <name> <phase>
+Usage: sdd write <name> <phase> [--force]
 
 Moves .pending/<phase>.md to its final location and advances the state
 machine. Claude writes to .pending/, Go promotes and tracks state.
+
+Before promotion, content is validated against phase-specific rules
+(required sections, file:line references for reviews, task checkboxes).
+Use --force to bypass validation.
 
 The state machine prevents re-promoting an already-completed phase.
 
 Arguments:
   name          Change name
   phase         Phase to promote (explore, propose, spec, design, tasks, apply, review, verify, clean)
+
+Flags:
+  --force, -f   Skip artifact content validation
 
 Output: JSON with promoted path and new current phase.
 Exit:   0 success, 1 error, 2 usage`,
@@ -206,15 +213,22 @@ Exit:   0 success, 1 error`,
 
 	"verify": `sdd verify — Run quality gate
 
-Usage: sdd verify <name>
+Usage: sdd verify <name> [--force]
 
 Runs build, lint, and test commands from config.yaml sequentially.
 Stops on first failure. Writes verify-report.md to the change directory.
+
+If the same error pattern has failed 3+ times historically for this
+change, verify warns and exits instead of retrying blindly. Use --force
+to override.
 
 This is a zero-token operation — runs entirely in Go.
 
 Arguments:
   name          Change name
+
+Flags:
+  --force, -f   Skip recurring failure check and run anyway
 
 Output: JSON with passed flag and report path.
 Exit:   0 all checks pass, 1 any check fails, 2 usage`,

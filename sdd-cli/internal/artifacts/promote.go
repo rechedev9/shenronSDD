@@ -13,7 +13,8 @@ var ErrNoPending = errors.New("no pending artifact")
 
 // Promote moves .pending/{phase}.md to its final location in the change directory.
 // For spec phase, the pending file is moved into the specs/ directory.
-func Promote(changeDir string, phase state.Phase) (string, error) {
+// If force is false, content is validated against phase-specific rules before promotion.
+func Promote(changeDir string, phase state.Phase, force bool) (string, error) {
 	src := PendingPath(changeDir, phase)
 
 	if _, err := os.Stat(src); err != nil {
@@ -38,10 +39,15 @@ func Promote(changeDir string, phase state.Phase) (string, error) {
 		dst = filepath.Join(changeDir, finalName)
 	}
 
-	// Read, write to destination, remove source (cross-device safe).
+	// Read, validate, write to destination, remove source (cross-device safe).
 	data, err := os.ReadFile(src)
 	if err != nil {
 		return "", fmt.Errorf("read pending: %w", err)
+	}
+	if !force {
+		if err := Validate(phase, data); err != nil {
+			return "", err
+		}
 	}
 	if err := os.WriteFile(dst, data, 0o644); err != nil {
 		return "", fmt.Errorf("write promoted: %w", err)

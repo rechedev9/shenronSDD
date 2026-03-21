@@ -12,6 +12,7 @@ import (
 
 	"github.com/rechedev9/shenronSDD/sdd-cli/internal/cli/errs"
 	"github.com/rechedev9/shenronSDD/sdd-cli/internal/config"
+	"github.com/rechedev9/shenronSDD/sdd-cli/internal/errlog"
 	"github.com/rechedev9/shenronSDD/sdd-cli/internal/events"
 	"github.com/rechedev9/shenronSDD/sdd-cli/internal/store"
 	"github.com/rechedev9/shenronSDD/sdd-cli/internal/verify"
@@ -19,10 +20,17 @@ import (
 
 func runVerify(args []string, stdout io.Writer, stderr io.Writer) error {
 	if len(args) < 1 {
-		return errs.Usage("usage: sdd verify <name>")
+		return errs.Usage("usage: sdd verify <name> [--force]")
 	}
 
 	name := args[0]
+	force := false
+	for _, arg := range args[1:] {
+		switch arg {
+		case "--force", "-f":
+			force = true
+		}
+	}
 
 	changeDir, err := resolveChangeDir(name)
 	if err != nil {
@@ -77,6 +85,18 @@ func runVerify(args []string, stdout io.Writer, stderr io.Writer) error {
 		data, _ := json.MarshalIndent(out, "", "  ")
 		fmt.Fprintln(stdout, string(data))
 		return nil
+	}
+
+	// Early stopping: warn about recurring error patterns.
+	if !force {
+		if matches := checkRecurringFailures(cwd, name); len(matches) > 0 {
+			fmt.Fprintf(stderr, "sdd verify: %d error pattern(s) recur 3+ times for %q:\n", len(matches), name)
+			for fp, count := range matches {
+				fmt.Fprintf(stderr, "  fingerprint %s — seen %d times\n", fp, count)
+			}
+			fmt.Fprintf(stderr, "Investigate before retrying. Use --force to run anyway.\n")
+			return fmt.Errorf("verify: recurring failures detected (use --force to override)")
+		}
 	}
 
 	// Build command list from config.
@@ -162,4 +182,37 @@ func runVerify(args []string, stdout io.Writer, stderr io.Writer) error {
 		return fmt.Errorf("verify: %d command(s) failed", report.FailedCount())
 	}
 	return nil
+}
+
+// checkRecurringFailures returns fingerprints that recur 3+ times globally
+// and match recent failures for the given change. Returns nil if no matches.
+func checkRecurringFailures(cwd, changeName string) map[string]int {
+	log := errlog.Load(cwd)
+	recurring := log.RecurringFingerprints(3)
+	if len(recurring) == 0 {
+		return nil
+	}
+
+	// Collect fingerprints from this change's recent failures.
+	var changeFingerprints []string
+	for i := len(log.Entries) - 1; i >= 0; i-- {
+		e := log.Entries[i]
+		if e.Change == changeName {
+			changeFingerprints = append(changeFingerprints, e.Fingerprint)
+		}
+		if len(changeFingerprints) >= 10 {
+			break
+		}
+	}
+
+	matches := make(map[string]int)
+	for _, fp := range changeFingerprints {
+		if count, ok := recurring[fp]; ok {
+			matches[fp] = count
+		}
+	}
+	if len(matches) == 0 {
+		return nil
+	}
+	return matches
 }

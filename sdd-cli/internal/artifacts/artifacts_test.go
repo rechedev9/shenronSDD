@@ -44,11 +44,11 @@ func TestPendingExists(t *testing.T) {
 
 func TestPromote(t *testing.T) {
 	dir := t.TempDir()
-	content := []byte("# Exploration results\n")
+	content := []byte("# Exploration\n\n## Current State\nLogin page exists.\n\n## Relevant Files\n- login.go\n")
 
 	WritePending(dir, state.PhaseExplore, content)
 
-	promoted, err := Promote(dir, state.PhaseExplore)
+	promoted, err := Promote(dir, state.PhaseExplore, false)
 	if err != nil {
 		t.Fatalf("Promote: %v", err)
 	}
@@ -75,11 +75,11 @@ func TestPromote(t *testing.T) {
 
 func TestPromoteSpec(t *testing.T) {
 	dir := t.TempDir()
-	content := []byte("# Auth Spec\n")
+	content := []byte("# Auth Spec\n\n## Requirements\n- OAuth login\n")
 
 	WritePending(dir, state.PhaseSpec, content)
 
-	promoted, err := Promote(dir, state.PhaseSpec)
+	promoted, err := Promote(dir, state.PhaseSpec, false)
 	if err != nil {
 		t.Fatalf("Promote spec: %v", err)
 	}
@@ -101,7 +101,7 @@ func TestPromoteSpec(t *testing.T) {
 func TestPromoteNoPending(t *testing.T) {
 	dir := t.TempDir()
 
-	_, err := Promote(dir, state.PhaseExplore)
+	_, err := Promote(dir, state.PhaseExplore, false)
 	if err == nil {
 		t.Fatal("expected error for missing pending")
 	}
@@ -258,6 +258,38 @@ func TestPendingFileName(t *testing.T) {
 	}
 }
 
+func TestPromoteValidationReject(t *testing.T) {
+	dir := t.TempDir()
+	// Explore artifact missing required sections.
+	WritePending(dir, state.PhaseExplore, []byte("# Exploration\n\nno required sections"))
+
+	_, err := Promote(dir, state.PhaseExplore, false)
+	if err == nil {
+		t.Fatal("expected validation error for invalid explore artifact")
+	}
+	if !errors.Is(err, ErrValidation) {
+		t.Errorf("error should wrap ErrValidation, got: %v", err)
+	}
+	// Pending file should still exist (not promoted).
+	if !PendingExists(dir, state.PhaseExplore) {
+		t.Error("pending file should still exist after rejected promotion")
+	}
+}
+
+func TestPromoteForceBypass(t *testing.T) {
+	dir := t.TempDir()
+	// Explore artifact missing required sections — but force=true.
+	WritePending(dir, state.PhaseExplore, []byte("# Exploration\n\nno required sections"))
+
+	promoted, err := Promote(dir, state.PhaseExplore, true)
+	if err != nil {
+		t.Fatalf("force promote should succeed, got: %v", err)
+	}
+	if _, err := os.Stat(promoted); err != nil {
+		t.Errorf("promoted file missing: %v", err)
+	}
+}
+
 func TestPromoteAllPhases(t *testing.T) {
 	// Verify every phase with an artifact mapping can be promoted.
 	phases := []state.Phase{
@@ -270,7 +302,7 @@ func TestPromoteAllPhases(t *testing.T) {
 			dir := t.TempDir()
 			WritePending(dir, phase, []byte("content for "+string(phase)))
 
-			promoted, err := Promote(dir, phase)
+			promoted, err := Promote(dir, phase, true)
 			if err != nil {
 				t.Fatalf("Promote(%s): %v", phase, err)
 			}
