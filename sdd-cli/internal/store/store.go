@@ -7,14 +7,18 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	_ "modernc.org/sqlite"
 )
 
 // Store wraps a SQLite database for SDD telemetry.
+// Writes are serialized through mu because modernc.org/sqlite (pure Go)
+// does not reliably handle WAL write contention via busy_timeout alone.
 type Store struct {
 	db *sql.DB
+	mu sync.Mutex
 }
 
 // PhaseEvent records a single phase execution.
@@ -190,6 +194,8 @@ func (s *Store) migrate(ctx context.Context) error {
 // InsertPhaseEvent stores a phase execution record. Timestamp is stored as
 // RFC 3339 TEXT.
 func (s *Store) InsertPhaseEvent(ctx context.Context, e PhaseEvent) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	cached := 0
 	if e.Cached {
 		cached = 1
@@ -209,6 +215,8 @@ func (s *Store) InsertPhaseEvent(ctx context.Context, e PhaseEvent) error {
 // InsertVerifyEvent stores a verify command result. ErrorLines is serialised
 // as a JSON array of strings.
 func (s *Store) InsertVerifyEvent(ctx context.Context, e VerifyEvent) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	lines := e.ErrorLines
 	if lines == nil {
 		lines = []string{}
@@ -323,6 +331,8 @@ func (s *Store) RecentErrors(ctx context.Context, limit int) ([]ErrorRow, error)
 
 // InsertVerifyResult stores a verify command result (pass/fail).
 func (s *Store) InsertVerifyResult(ctx context.Context, r VerifyResult) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	passed := 0
 	if r.Passed {
 		passed = 1
