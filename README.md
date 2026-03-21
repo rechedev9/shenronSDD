@@ -1,36 +1,38 @@
-# SDD — Spec-Driven Development CLI
+<p align="center">
+  <img src="assets/logo.jpg" alt="SDD Logo" width="200">
+</p>
 
-**A Go binary that turns Claude Code into a structured engineering pipeline. Deterministic orchestration, zero-token state management, cached context assembly.**
+<h1 align="center">SDD — Spec-Driven Development</h1>
 
-![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)
-![Go: 1.24](https://img.shields.io/badge/Go-1.24-00ADD8.svg)
-![Phases: 10](https://img.shields.io/badge/Phases-10-orange.svg)
-![Version: 3.0](https://img.shields.io/badge/Version-3.0-purple.svg)
+<p align="center">
+  <strong>Go CLI that turns Claude Code into a structured engineering pipeline.<br>Deterministic orchestration. Zero-token state management. Cached context assembly.</strong>
+</p>
+
+<p align="center">
+  <a href="https://github.com/rechedev9/shenronSDD/actions"><img src="https://img.shields.io/github/actions/workflow/status/rechedev9/shenronSDD/ci.yml?style=for-the-badge&label=CI" alt="CI"></a>
+  <img src="https://img.shields.io/badge/Go-1.24-00ADD8?style=for-the-badge&logo=go" alt="Go 1.24">
+  <img src="https://img.shields.io/badge/Phases-10-7C3AED?style=for-the-badge" alt="Phases: 10">
+  <img src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge" alt="MIT License">
+</p>
+
+<p align="center">
+  <a href="docs/01-why-sdd.md">Why SDD?</a> ·
+  <a href="docs/02-pipeline.md">Pipeline</a> ·
+  <a href="docs/architecture.md">Architecture</a> ·
+  <a href="docs/04-commands-reference.md">Commands</a> ·
+  <a href="docs/05-skills-catalog.md">Skills</a> ·
+  <a href="docs/08-advanced.md">Advanced</a> ·
+  <a href="docs/contributing-to-cli.md">Contributing</a>
+</p>
 
 ---
 
-## The Problem
-
-AI coding agents waste tokens on work that doesn't need intelligence: tracking which phase is next, reading the same SKILL.md file every session, loading artifacts, running build commands, parsing test output. In a typical 10-phase pipeline, ~65% of tokens go to mechanical bookkeeping, not reasoning.
-
-## The Solution
-
-`sdd` is a Go CLI that handles all deterministic operations at **zero token cost**:
+AI coding agents waste ~65% of their tokens on mechanical bookkeeping — reading SKILL files, tracking state, loading artifacts, running build commands. None of that requires intelligence. `sdd` is a Go binary that handles all deterministic operations at zero token cost, so Claude only spends tokens on reasoning.
 
 ```
-Claude = reasoning (probabilistic, expensive)
-Go     = orchestration (deterministic, free)
+Claude = reasoning (expensive, probabilistic)
+Go     = orchestration (free, deterministic)
 ```
-
-```
-sdd context → Go assembles SKILL + artifacts + cascade summary (0 tokens)
-              ↓
-           Claude reasons, writes to .pending/phase.md
-              ↓
-sdd write  → Go promotes artifact, advances state machine (0 tokens)
-```
-
-**Result:** ~161K tokens per pipeline vs ~458K without the CLI. 65% reduction, with better context per phase.
 
 ---
 
@@ -40,336 +42,239 @@ sdd write  → Go promotes artifact, advances state machine (0 tokens)
 curl -sSL https://raw.githubusercontent.com/rechedev9/shenronSDD/master/install.sh | bash
 ```
 
-Or clone and run locally:
+Or from source:
 
 ```bash
 git clone https://github.com/rechedev9/shenronSDD
 cd shenronSDD && ./install.sh
 ```
 
-The installer sets up skills, slash commands, and (if Go is available) builds the `sdd` binary to `~/.local/bin/sdd`.
+Requires [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) + [Go 1.24+](https://go.dev/dl/).
 
-### Prerequisites
-
-- [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) installed and authenticated
-- [Go 1.24+](https://go.dev/dl/) for the `sdd` CLI binary
-- Git initialized in your project
-
-### First run
+## Quick start
 
 ```bash
 cd your-project
 claude
-/sdd-init            # Detect stack, create openspec/
-/sdd-new my-feature "What I want to build"
-/sdd-continue        # Repeat until archive
+/sdd-init                              # detect stack, create openspec/
+/sdd-new my-feature "what to build"    # explore + propose
+/sdd-continue                          # repeat until archive
 ```
 
 ---
 
-## How It Works
+## Highlights
 
-### The Pipeline
-
-```
-explore → propose → spec + design → tasks → apply → review → verify → clean → archive
-                     (parallel)
-```
-
-Every phase has two actors: **Go orchestrates** (state, context, cache), **Claude reasons** (or not).
-
-| # | Phase | Reasoning | Orchestration | Output | Claude tokens |
-|---|-------|-----------|---------------|--------|---------------|
-| 1 | **init** | — | Go detects stack, creates config | `config.yaml` | **0** |
-| 2 | **explore** | Claude (Sonnet) | Go assembles SKILL + file tree + manifests | `exploration.md` | ~44K |
-| 3 | **propose** | Claude (Opus) | Go assembles SKILL + exploration + project context | `proposal.md` | ~25K |
-| 4 | **spec** | Claude (Opus) | Go assembles SKILL + proposal + cascade summary | `specs/*.md` | ~50K |
-| 5 | **design** | Claude (Opus) | Go assembles SKILL + proposal + specs + cascade | `design.md` | ~42K |
-| 6 | **tasks** | Claude (Sonnet) | Go assembles SKILL + design + specs | `tasks.md` | ~21K |
-| 7 | **apply** | Claude (Opus) | Go assembles SKILL + current task + completed tasks + design | source files | varies |
-| 8 | **review** | Claude (Opus) | Go assembles SKILL + specs + design + git diff | `review-report.md` | varies |
-| 9 | **verify** | **None** | **Go runs build/lint/test directly** | `verify-report.md` | **0** |
-| 10 | **clean** | Claude (Sonnet) | Go assembles SKILL + verify-report + design + specs | `clean-report.md` | varies |
-| 11 | **archive** | **None** | **Go moves directory + writes manifest** | `archive/` | **0** |
-
-### Where the 65% token savings come from
-
-The savings are **not** just from verify + archive being Go. Three sources:
-
-| Source | Tokens saved | How |
-|--------|-------------|-----|
-| **Go-native phases** (init, verify, archive) | ~75K | These phases used to require Claude to run commands and parse output |
-| **Context assembly in Go** | ~160K | Before: Claude read SKILL.md + every artifact + scanned directories per phase. Now: Go assembles and delivers pre-built context |
-| **Cache + Cascade** | ~60K | Content-hash cache serves repeated calls in 0ms. Context Cascade carries prior decisions forward without re-reading |
-| **Total** | **~295K** | From ~458K down to ~161K per pipeline |
-
-Claude still does **all the reasoning** — exploring, proposing, specifying, designing, implementing, reviewing, cleaning. Go only eliminates the mechanical work Claude used to waste tokens on: reading files, tracking state, discovering what phase is next, executing shell commands.
-
-### The Flow (inside Claude Code)
-
-```bash
-# 1. Go assembles context (cached, with metrics)
-$ sdd context my-feature propose
-sdd: phase=propose ↑14KB Δ3K tokens 0ms (cached)
-
-# Phase refs are flexible — abbreviations, prefixes, or indices work:
-$ sdd context my-feature p      # "p" → propose
-$ sdd context my-feature 3      # index 3 → spec
-
-# 2. Slash command feeds context to Claude sub-agent
-#    Claude writes to .pending/propose.md
-
-# 3. Go promotes artifact + advances state
-$ sdd write my-feature propose
-{"phase": "propose", "status": "success", "current_phase": "spec"}
-
-# 4. Repeat for each phase
-```
-
-### Context Cascade
-
-Each phase receives a cumulative summary of all prior decisions — generated by Go at zero cost:
-
-| Phase | Gets from prior phases |
-|-------|----------------------|
-| propose | exploration + project config + file tree |
-| spec | proposal + stack info + pipeline summary |
-| design | proposal + specs + stack info + pipeline summary |
-| apply | current task + **completed tasks** + design + specs |
-| clean | verify-report + tasks + **design + specs** + pipeline summary |
-
-This solves the #1 problem of multi-agent pipelines: context loss between phases.
+- **[65% token reduction](docs/token-economics.md)** — from ~458K to ~161K tokens per pipeline. Go handles all mechanical work.
+- **[10-phase pipeline](docs/02-pipeline.md)** — explore → propose → spec + design (parallel) → tasks → apply → review → verify → clean → archive.
+- **[Zero-token phases](docs/02-pipeline.md)** — init, verify, and archive run entirely in Go. No LLM involved.
+- **[Content-hash cache](docs/08-advanced.md)** — SHA256 of input artifacts + SKILL.md. Cache hits served in 0ms. Per-phase TTLs.
+- **[Context Cascade](docs/08-advanced.md)** — cumulative decision summary carried forward across phases at zero cost.
+- **[Phase registry](docs/architecture.md)** — pluggable `Phase` struct with prerequisites, artifacts, cache config, and assembler. Custom phases via `Register()`.
+- **[Event broker](docs/architecture.md)** — pub/sub decouples state machine from metrics, caching, and logging. Non-blocking with panic recovery.
+- **[Concurrent loading](docs/architecture.md)** — `LazySlice` loads artifacts in parallel goroutines. Blocks only on consumption.
+- **[Flexible phase refs](docs/04-commands-reference.md)** — `sdd context foo p` (prefix), `sdd context foo 3` (index). Abbreviations just work.
+- **[sdd doctor](docs/sdd-cli-reference.md)** — validates config, cache integrity, artifact completeness. `--json` for CI.
 
 ---
 
-## The CLI
+## How it works
 
 ```
-sdd <command> [arguments]
+┌─────────────────────────────────────────────────────────────────┐
+│                        sdd context                              │
+│                                                                 │
+│  ┌─────────┐   ┌──────────┐   ┌──────────┐   ┌──────────────┐  │
+│  │ SKILL.md│ + │Artifacts │ + │ Cascade  │ + │ Config/Tree  │  │
+│  └────┬────┘   └────┬─────┘   └────┬─────┘   └──────┬───────┘  │
+│       └─────────────┼──────────────┼────────────────┘           │
+│                     ▼                                           │
+│              Assembled Context                                  │
+│              (cached, 0ms hit)                                  │
+└─────────────────────┬───────────────────────────────────────────┘
+                      ▼
+               Claude reasons
+               writes .pending/
+                      ▼
+┌─────────────────────┴───────────────────────────────────────────┐
+│                        sdd write                                │
+│                                                                 │
+│  Promote artifact  →  Advance state machine  →  Emit events    │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-### Pipeline Commands
+Each phase: Go assembles context (0 tokens) → Claude reasons → Go promotes + advances (0 tokens). Claude does all the thinking. Go does all the bookkeeping.
 
-| Command | Description | Tokens |
-|---------|-------------|--------|
-| `sdd init` | Detect stack, create openspec/, write config.yaml | 0 |
-| `sdd new <name> <desc>` | Create change, capture git HEAD, print explore context | 0 |
-| `sdd context <name> [phase]` | Assemble SKILL + artifacts + cascade (cached) | 0 |
-| `sdd write <name> <phase>` | Promote .pending artifact, advance state machine | 0 |
-| `sdd verify <name>` | Run build/lint/test with progress logging | 0 |
-| `sdd archive <name>` | Move to archive, write manifest | 0 |
+---
 
-### Inspection Commands
+## Everything we built
 
-| Command | Description | Tokens |
-|---------|-------------|--------|
-| `sdd status <name>` | Phase progress + staleness detection | 0 |
-| `sdd list` | Active changes with current phase | 0 |
-| `sdd diff <name>` | Files changed since `sdd new` | 0 |
-| `sdd health <name>` | Pipeline health: tokens, cache stats, warnings | 0 |
-| `sdd doctor` | Validate config, cache integrity, artifact completeness | 0 |
-| `sdd dump` | Snapshot full workflow state as indented JSON | 0 |
+### Pipeline phases
+
+| Phase | Actor | Output |
+|-------|-------|--------|
+| **explore** | Claude (Sonnet) | `exploration.md` — codebase analysis, risk assessment |
+| **propose** | Claude (Opus) | `proposal.md` — intent, scope, approach, risks, rollback |
+| **spec** | Claude (Opus) | `specs/*.md` — RFC 2119 requirements with Given/When/Then |
+| **design** | Claude (Opus) | `design.md` — type definitions, file changes, before/after |
+| **tasks** | Claude (Sonnet) | `tasks.md` — ordered implementation checklist |
+| **apply** | Claude (Opus) | source files — implements one task at a time |
+| **review** | Claude (Opus) | `review-report.md` — semantic code review against spec |
+| **verify** | **Go** | `verify-report.md` — runs build/lint/test (0 tokens) |
+| **clean** | Claude (Sonnet) | `clean-report.md` — dead code removal |
+| **archive** | **Go** | `archive/` — moves completed change (0 tokens) |
+
+### CLI commands
+
+| Command | What it does |
+|---------|-------------|
+| `sdd init` | Detect stack, create `openspec/`, write `config.yaml` |
+| `sdd new <name> <desc>` | Create change, capture git HEAD, print explore context |
+| `sdd context <name> [phase]` | Assemble SKILL + artifacts + cascade (cached) |
+| `sdd write <name> <phase>` | Promote `.pending/` artifact, advance state machine |
+| `sdd verify <name>` | Run build/lint/test with progress logging |
+| `sdd archive <name>` | Move to `archive/`, write manifest |
+| `sdd status <name>` | Phase progress + staleness detection |
+| `sdd list` | Active changes with current phase |
+| `sdd diff <name>` | Files changed since `sdd new` |
+| `sdd health <name>` | Token usage, cache stats, pipeline warnings |
+| `sdd doctor` | Validate config, cache, artifacts |
+| `sdd dump` | Full workflow state as JSON |
+
+Details: [CLI Reference](docs/sdd-cli-reference.md)
+
+### Slash commands
+
+| Command | What it does |
+|---------|-------------|
+| `/sdd-init` | Detect stack, create openspec/ |
+| `/sdd-new <name> <desc>` | Explore + propose in one shot |
+| `/sdd-continue [name]` | Run next phase automatically |
+| `/sdd-ff <name>` | Fast-forward: explore → propose → spec+design → tasks |
+| `/sdd-apply [name]` | Implement current task |
+| `/sdd-review [name]` | Semantic code review |
+| `/sdd-verify [name]` | Build/lint/test (zero tokens if green) |
+| `/sdd-clean [name]` | Dead code removal |
+| `/sdd-archive [name]` | Close and archive change |
+
+Details: [Commands Reference](docs/04-commands-reference.md)
 
 ### Flags
 
-| Flag | Description |
-|------|-------------|
-| `--json` | JSON output on all subcommands (for CI/scripting) |
-| `-q` | Quiet — exit code only |
-| `-v` | Verbose — cache hit/miss, timing details |
-| `-d` | Debug — full assembly trace |
+`--json` on all commands for CI/scripting. `-q` quiet (exit code only). `-v` verbose (cache, timing). `-d` debug (full trace).
 
-### Slash Commands (use CLI under the hood)
+### Skills
 
-| Slash Command | What it does |
-|---------------|-------------|
-| `/sdd-init` | Runs `sdd init`, shows results |
-| `/sdd-new <name> <desc>` | `sdd new` → Claude explores → `sdd write` → Claude proposes → `sdd write` |
-| `/sdd-continue [name]` | `sdd status` → `sdd context` → Claude reasons → `sdd write` |
-| `/sdd-ff <name>` | Fast-forward: explore → propose → spec+design (parallel) → tasks |
-| `/sdd-apply [name]` | `sdd context apply` → Claude implements → `sdd write` |
-| `/sdd-review [name]` | `sdd context review` → Claude reviews → `sdd write` |
-| `/sdd-verify [name]` | `sdd verify` (zero tokens if green) |
-| `/sdd-clean [name]` | `sdd context clean` → Claude cleans → `sdd write` |
-| `/sdd-archive [name]` | `sdd archive` (zero tokens) |
+| Category | Count | Examples |
+|----------|-------|---------|
+| SDD phases | 11 | `sdd-explore`, `sdd-propose`, `sdd-spec`, ... |
+| Frameworks | 14+ | Go, React, TypeScript, Next.js, Python, ... |
+| Analysis | 4 | Code review, security audit, ... |
+| Knowledge | 3 | Domain modeling, ... |
+| Workflows | 4 | CI/CD, deployment, ... |
+
+Details: [Skills Catalog](docs/05-skills-catalog.md)
+
+### Internal architecture
+
+- **[Phase Registry](sdd-cli/internal/phase/)** — single `Phase` struct replaces 4 parallel maps. Pluggable custom phases via `Register()`.
+- **[State Machine](sdd-cli/internal/state/)** — prerequisite-driven transitions, atomic persistence, crash recovery from artifacts.
+- **[Context Assemblers](sdd-cli/internal/context/)** — per-phase assemblers with content-hash cache and TTL expiration.
+- **[Event Broker](sdd-cli/internal/events/)** — pub/sub for metrics, cache persistence, stderr output. Panic-safe subscribers.
+- **[LazySlice](sdd-cli/internal/csync/)** — concurrent artifact loading. Start goroutines eagerly, block on consumption.
+- **[Artifact System](sdd-cli/internal/artifacts/)** — `.pending/` staging, promotion, listing, reading.
+- **[Config Detection](sdd-cli/internal/config/)** — auto-detect language, build/test/lint commands, manifests.
+
+Details: [Architecture](docs/architecture.md) · [Go CLI Patterns](docs/go-cli-patterns.md)
 
 ---
 
-## Why a Go CLI?
-
-### The token tax
-
-Without the CLI, an LLM orchestrator spends tokens on:
-- Reading SKILL.md files (~40K across 8 phases)
-- Loading artifacts from prior phases (~116K cumulative)
-- Discovering state manually (~30K scanning directories)
-- Running and parsing build/test output (~75K for verify + archive)
-
-**Total tax: ~261K tokens per pipeline** — none of which requires intelligence.
-
-### The harness pattern
-
-The CLI is not a wrapper — it's **infrastructure that constrains the agent**:
-
-- The state machine **prevents** skipping phases
-- The artifact system **enforces** where files are written
-- The verify runner **executes** build/lint/test without LLM involvement
-- The cache system **prevents** redundant work
-- The Context Cascade **carries** decisions forward without re-reading
-
-Deterministic code orchestrates, LLM reasons.
-
-### Phase registry
-
-All phase metadata lives in a single `Phase` struct — prerequisites, artifact filenames, cache inputs, TTLs, and assembler functions. No more parallel maps across packages.
-
-```go
-phase.DefaultRegistry.Register(phase.Phase{
-    Name:          "my-phase",
-    Prerequisites: []string{"design"},
-    ArtifactFile:  "my-phase.md",
-    CacheInputs:   []string{"design.md"},
-    CacheTTL:      1 * time.Hour,
-    Assemble:      myAssemblerFunc,
-})
-```
-
-Custom phases are pluggable — register at startup, no core files modified. The registry is read-only after first access (sealed on first `Get()`).
-
-### Event broker
-
-Phase transitions, cache operations, and metrics are decoupled via a pub/sub event broker. Subscribers handle logging, metrics persistence, and cache cleanup independently. Non-blocking, context-aware, with panic recovery per subscriber.
-
-### Concurrent artifact loading
-
-`csync.LazySlice` starts goroutines eagerly at phase entry to load all potentially-needed artifacts in parallel. Blocks only when the assembler actually consumes them. Free parallelism for I/O-bound reads.
-
-### Cache architecture
+## Cache architecture
 
 ```
 openspec/changes/{name}/.cache/
-  spec.hash         # SHA256(v6:SKILL.md + proposal.md + exploration.md) | unix_timestamp
-  spec.ctx          # Pre-assembled context (served in 0ms on cache hit)
+  spec.hash         # SHA256(v6:SKILL.md + proposal.md + exploration.md) | timestamp
+  spec.ctx          # Pre-assembled context (0ms on cache hit)
   metrics.json      # Cumulative: bytes, tokens, cache hits/misses per phase
 ```
 
-- **Content-hash**: SHA256 of input artifacts + SKILL.md + cacheVersion
-- **Per-dimension TTL**: apply=30min, spec/design=2h, propose=4h (defined in phase registry)
-- **Version guard**: bumping `cacheVersion` invalidates all caches
-- **Smart-skip verify**: reuses last PASSED report if no source files changed
-
-### Measured performance
-
-| Metric | Without CLI | With CLI |
-|--------|-----------|---------|
-| Tokens per pipeline | ~458K | ~161K |
-| State management | Manual (Claude scans) | Go state machine (0 tokens) |
-| Context assembly | Claude reads each time | Cached, 0ms on hit |
-| Verify + archive | ~75K tokens | 0 tokens |
-| Errors (wrong path, skipped phase) | ~5% rate | 0% (mechanically enforced) |
-| Recovery between sessions | Manual inspection | `sdd status` + `sdd health` |
+- **Content-hash** — SHA256 of input artifacts + SKILL.md + `cacheVersion`. Any input change = cache miss.
+- **Per-phase TTL** — apply=30min, spec/design=2h, propose=4h. Defined in the phase registry.
+- **Version guard** — bumping `cacheVersion` invalidates all caches automatically.
+- **Smart-skip verify** — reuses last PASSED report if no source files changed.
 
 ---
 
-## Project Structure
+## When to use SDD
+
+```
+One-line fix        →  just edit the file
+Small change        →  /sdd-explore + manual edit
+Medium change       →  /sdd-ff + /sdd-apply + /sdd-verify
+Large change        →  full 10-phase pipeline
+Architecture        →  full pipeline + extra review cycles
+```
+
+---
+
+## Project structure
 
 ```
 shenronSDD/
-  sdd-cli/                    # Go CLI binary source
-    cmd/sdd/main.go           # Entry point (13 lines)
+  sdd-cli/                    # Go CLI source
+    cmd/sdd/main.go
     internal/
-      phase/                  # Phase struct, Registry — single source of truth for all phase metadata
-      cli/                    # Command routing + 13 subcommands (doctor, dump added)
-      state/                  # Phase state machine, atomic persistence
-      context/                # Assemblers + cache + metrics + Context Cascade
+      phase/                  # Phase struct + Registry (single source of truth)
+      cli/                    # 13 subcommands
+      state/                  # State machine, atomic persistence
+      context/                # Assemblers, cache, metrics, Context Cascade
       artifacts/              # .pending write/promote/read/list
-      config/                 # Stack detection + config.yaml (with version guard)
-      verify/                 # Build/lint/test runner + archive
-      events/                 # Pub/sub event broker — decouples state machine from side effects
-      csync/                  # LazySlice — concurrent artifact loading
+      config/                 # Stack detection, config.yaml
+      verify/                 # Build/lint/test runner, archive
+      events/                 # Pub/sub event broker
+      csync/                  # Concurrent artifact loading
   skills/                     # SKILL.md files (loaded by sdd context)
-    sdd/                      # 11 phase skills
-    frameworks/               # 14+ framework skills (Go, React, TS, ...)
-    analysis/                 # 4 analysis skills
-    knowledge/                # 3 knowledge skills
-    workflows/                # 4 workflow skills
   commands/                   # Slash command definitions
-  docs/                       # Documentation (15 files)
-  presentation/               # React slideshow
-  install.sh                  # Installer (skills + commands + Go binary)
-```
-
-### Per-project structure (created by `sdd init`)
-
-```
-your-project/
-  openspec/
-    config.yaml               # Auto-detected: language, build/test/lint commands
-    changes/
-      feature-name/
-        state.json            # Phase state machine
-        exploration.md        # Phase artifacts
-        proposal.md
-        specs/*.md
-        design.md
-        tasks.md
-        review-report.md
-        verify-report.md
-        .pending/             # Claude writes here, Go promotes
-        .cache/               # Content-hash cache + metrics
-      archive/
-        2026-03-20-feature/   # Completed changes (immutable)
+  docs/                       # 13 documentation files
+  install.sh                  # One-line installer
 ```
 
 ---
 
-## When to Use SDD
+## Docs
 
-```
-Trivial change     →  Just edit the file
-Small change       →  /sdd-explore + manual edit
-Medium change      →  /sdd-ff + /sdd-apply + /sdd-verify
-Large change       →  Full 11-phase pipeline
-Architecture       →  Full pipeline + extra review cycles
-```
+**Getting started**
+- [Why SDD?](docs/01-why-sdd.md) — the problem with AI coding and how SDD solves it
+- [Pipeline](docs/02-pipeline.md) — deep dive into all 10 phases
+- [Configuration](docs/07-configuration.md) — config.yaml, stack detection, setup
 
-Skip SDD for: one-line fixes, trivial additions, prototyping, pure research.
-Use `/sdd-ff` for: medium changes, clear requirements, 3-10 files.
-Use full pipeline for: architecture changes, cross-cutting concerns, high-risk code.
+**Reference**
+- [CLI Reference](docs/sdd-cli-reference.md) — all 13 sdd commands
+- [Commands Reference](docs/04-commands-reference.md) — slash commands
+- [Skills Catalog](docs/05-skills-catalog.md) — how skills work, how to create new ones
 
----
+**Architecture**
+- [Pillars](docs/03-pillars.md) — the architectural pillars including Harness Infrastructure
+- [Architecture](docs/architecture.md) — internal architecture of the Go CLI
+- [Go CLI Patterns](docs/go-cli-patterns.md) — 14 Go patterns from production CLIs
+- [Token Economics](docs/token-economics.md) — measured token consumption before/after
+- [Advanced](docs/08-advanced.md) — cache, Context Cascade, TTL, metrics
 
-## Documentation
-
-| Document | Description |
-|----------|-------------|
-| [Why SDD?](docs/01-why-sdd.md) | The problem with standard AI coding and how SDD solves it |
-| [Pipeline](docs/02-pipeline.md) | Deep dive into all 11 phases |
-| [Pillars](docs/03-pillars.md) | The architectural pillars including Harness Infrastructure |
-| [Commands Reference](docs/04-commands-reference.md) | Slash commands + CLI commands |
-| [Skills Catalog](docs/05-skills-catalog.md) | How skills work and how to create new ones |
-| [Comparisons](docs/06-comparisons.md) | SDD vs alternatives with token economics |
-| [Configuration](docs/07-configuration.md) | config.yaml, stack detection, setup |
-| [Advanced](docs/08-advanced.md) | Cache architecture, Context Cascade, TTL, metrics |
-| [CLI Reference](docs/sdd-cli-reference.md) | Complete reference for all 11 sdd commands |
-| [Architecture](docs/architecture.md) | Internal architecture of the Go CLI |
-| [Token Economics](docs/token-economics.md) | Measured token consumption before/after |
-| [Go CLI Patterns](docs/go-cli-patterns.md) | 14 Go patterns adopted from production CLIs |
-| [Contributing](docs/contributing-to-cli.md) | How to add commands, assemblers, patterns |
+**Community**
+- [Comparisons](docs/06-comparisons.md) — SDD vs alternatives
+- [Contributing](docs/contributing-to-cli.md) — how to add commands, assemblers, patterns
 
 ---
 
 ## Contributing
 
-Areas where help is needed:
+- **CLI** — new commands, performance, caching improvements
+- **Skills** — Vue, Svelte, FastAPI, Spring Boot, and more
+- **Phases** — better prompts, output formats
+- **Tests** — integration tests, edge case coverage
+- **Docs** — tutorials, case studies
 
-- **CLI improvements**: new commands, better caching, performance
-- **Framework skills**: Vue, Svelte, FastAPI, Spring Boot, etc.
-- **Phase improvements**: better prompts, output formats
-- **Testing**: more integration tests, edge case coverage
-- **Documentation**: tutorials, case studies
-
-See [Contributing to CLI](docs/contributing-to-cli.md) for build/test/patterns guide.
+See [Contributing to CLI](docs/contributing-to-cli.md) for the build/test/patterns guide.
 
 ---
 
