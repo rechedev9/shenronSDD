@@ -1,0 +1,28 @@
+{{if .}}
+<table class="error-table">
+  <thead>
+    <tr>
+      <th>Timestamp</th>
+      <th>Command</th>
+      <th>Exit</th>
+      <th>Change</th>
+      <th>Fingerprint</th>
+      <th>Error</th>
+    </tr>
+  </thead>
+  <tbody>
+    {{range .}}
+    <tr>
+      <td>{{.Timestamp}}</td>
+      <td>{{.CommandName}}</td>
+      <td>{{.ExitCode}}</td>
+      <td>{{.Change}}</td>
+      <td class="fp">{{.Fingerprint}}</td>
+      <td>{{.FirstLine}}</td>
+    </tr>
+    {{end}}
+  </tbody>
+</table>
+{{else}}
+<div class="empty-state">No errors recorded</div>
+{{end}}

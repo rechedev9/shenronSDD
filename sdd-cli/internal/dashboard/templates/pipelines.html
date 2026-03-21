@@ -1,0 +1,31 @@
+{{if .}}
+<table>
+  <thead>
+    <tr>
+      <th>Change</th>
+      <th>Phase</th>
+      <th>Progress</th>
+      <th>Tokens</th>
+      <th>Status</th>
+    </tr>
+  </thead>
+  <tbody>
+    {{range .}}
+    <tr>
+      <td>{{.Name}}</td>
+      <td>{{.CurrentPhase}}</td>
+      <td>
+        <div class="progress-bar">
+          <div class="progress-fill" style="width: {{.ProgressPct}}%"></div>
+        </div>
+        <span style="font-size:11px;color:#888">{{.Completed}}/{{.Total}}</span>
+      </td>
+      <td>{{.Tokens}}</td>
+      <td><span class="status-dot {{.Status}}"></span></td>
+    </tr>
+    {{end}}
+  </tbody>
+</table>
+{{else}}
+<div class="empty-state">No active changes</div>
+{{end}}
