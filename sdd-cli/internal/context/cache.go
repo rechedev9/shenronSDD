@@ -18,7 +18,7 @@ import (
 // Any cache entry written with a different version is treated as stale.
 // Bump this when: adding new sections to assemblers, changing section
 // labels, modifying summary format, or changing what artifacts are loaded.
-const cacheVersion = 4
+const cacheVersion = 5
 
 // phaseTTL defines per-dimension cache freshness durations.
 // Different phases have different volatility during active development.
@@ -183,11 +183,24 @@ func saveContextCache(changeDir, phase, skillsPath string, content []byte) error
 	hash := inputHash(changeDir, inputs, skillsPath, phase)
 	hashWithTS := fmt.Sprintf("%s|%d", hash, time.Now().Unix())
 
-	if err := os.WriteFile(hashCachePath(changeDir, phase), []byte(hashWithTS), 0o644); err != nil {
+	hashPath := hashCachePath(changeDir, phase)
+	tmp := hashPath + ".tmp"
+	if err := os.WriteFile(tmp, []byte(hashWithTS), 0o644); err != nil {
 		return fmt.Errorf("write hash cache: %w", err)
 	}
-	if err := os.WriteFile(contextCachePath(changeDir, phase), content, 0o644); err != nil {
+	if err := os.Rename(tmp, hashPath); err != nil {
+		os.Remove(tmp)
+		return fmt.Errorf("rename hash cache: %w", err)
+	}
+
+	ctxPath := contextCachePath(changeDir, phase)
+	tmp = ctxPath + ".tmp"
+	if err := os.WriteFile(tmp, content, 0o644); err != nil {
 		return fmt.Errorf("write context cache: %w", err)
+	}
+	if err := os.Rename(tmp, ctxPath); err != nil {
+		os.Remove(tmp)
+		return fmt.Errorf("rename context cache: %w", err)
 	}
 
 	return nil
@@ -285,9 +298,15 @@ func recordMetrics(changeDir string, m *contextMetrics) {
 		return
 	}
 
-	dir := cacheDir(changeDir)
-	_ = os.MkdirAll(dir, 0o755)
-	_ = os.WriteFile(metricsPath(changeDir), data, 0o644)
+	_ = os.MkdirAll(cacheDir(changeDir), 0o755)
+	mp := metricsPath(changeDir)
+	tmp := mp + ".tmp"
+	if os.WriteFile(tmp, data, 0o644) != nil {
+		return
+	}
+	if os.Rename(tmp, mp) != nil {
+		os.Remove(tmp)
+	}
 }
 
 // LoadPipelineMetrics reads the cumulative metrics file, or creates a new one.

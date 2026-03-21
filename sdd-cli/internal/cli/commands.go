@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -87,12 +88,25 @@ func resolveDir(dir string) (string, error) {
 }
 
 func runNew(args []string, stdout io.Writer, stderr io.Writer) error {
-	if len(args) < 2 {
-		return errs.Usage("usage: sdd new <name> <description>")
+	jsonOut := false
+	var positional []string
+	for _, arg := range args {
+		switch {
+		case arg == "--json":
+			jsonOut = true
+		case !strings.HasPrefix(arg, "-"):
+			positional = append(positional, arg)
+		default:
+			return errs.Usage(fmt.Sprintf("unknown flag: %s", arg))
+		}
 	}
 
-	name := args[0]
-	description := args[1]
+	if len(positional) < 2 {
+		return errs.Usage("usage: sdd new <name> <description> [--json]")
+	}
+
+	name := positional[0]
+	description := positional[1]
 
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -125,6 +139,27 @@ func runNew(args []string, stdout io.Writer, stderr io.Writer) error {
 		_ = state.Save(st, statePath) // best-effort re-save
 	}
 
+	if jsonOut {
+		out := struct {
+			Command      string `json:"command"`
+			Status       string `json:"status"`
+			Change       string `json:"change"`
+			Description  string `json:"description"`
+			ChangeDir    string `json:"change_dir"`
+			CurrentPhase string `json:"current_phase"`
+		}{
+			Command:      "new",
+			Status:       "success",
+			Change:       name,
+			Description:  description,
+			ChangeDir:    changeDir,
+			CurrentPhase: string(state.PhaseExplore),
+		}
+		data, _ := json.MarshalIndent(out, "", "  ")
+		fmt.Fprintln(stdout, string(data))
+		return nil
+	}
+
 	// Run explore assembler to stdout.
 	p := &sddctx.Params{
 		ChangeDir:   changeDir,
@@ -145,11 +180,24 @@ func runNew(args []string, stdout io.Writer, stderr io.Writer) error {
 }
 
 func runContext(args []string, stdout io.Writer, stderr io.Writer) error {
-	if len(args) < 1 {
-		return errs.Usage("usage: sdd context <name> [phase]")
+	jsonOut := false
+	var positional []string
+	for _, arg := range args {
+		switch {
+		case arg == "--json":
+			jsonOut = true
+		case !strings.HasPrefix(arg, "-"):
+			positional = append(positional, arg)
+		default:
+			return errs.Usage(fmt.Sprintf("unknown flag: %s", arg))
+		}
 	}
 
-	name := args[0]
+	if len(positional) < 1 {
+		return errs.Usage("usage: sdd context <name> [phase] [--json]")
+	}
+
+	name := positional[0]
 
 	changeDir, err := resolveChangeDir(name)
 	if err != nil {
@@ -185,32 +233,72 @@ func runContext(args []string, stdout io.Writer, stderr io.Writer) error {
 		Stderr:      stderr,
 	}
 
-	// Explicit phase arg → single assembly.
-	if len(args) >= 2 {
-		phase := state.Phase(args[1])
-		if err := sddctx.Assemble(stdout, phase, p); err != nil {
-			return errs.WriteError(stderr, "context", err)
-		}
-		return nil
+	// Choose target writer: buffer for JSON mode, stdout otherwise.
+	var target io.Writer
+	var buf *bytes.Buffer
+	if jsonOut {
+		buf = &bytes.Buffer{}
+		target = buf
+	} else {
+		target = stdout
 	}
 
-	// Auto-resolve: check if multiple phases are ready (spec+design parallel window).
-	ready := st.ReadyPhases()
-	if len(ready) == 0 {
-		return errs.WriteError(stderr, "context", fmt.Errorf("no phases ready (pipeline complete or blocked)"))
-	}
-	if len(ready) > 1 {
-		// Concurrent assembly for parallel phases (spec+design).
-		if err := sddctx.AssembleConcurrent(stdout, ready, p); err != nil {
+	// Determine phase and assemble.
+	var phase string
+	if len(positional) >= 2 {
+		// Explicit phase arg → single assembly.
+		ph := state.Phase(positional[1])
+		phase = positional[1]
+		if err := sddctx.Assemble(target, ph, p); err != nil {
 			return errs.WriteError(stderr, "context", err)
 		}
-		return nil
+	} else {
+		// Auto-resolve: check if multiple phases are ready (spec+design parallel window).
+		ready := st.ReadyPhases()
+		if len(ready) == 0 {
+			return errs.WriteError(stderr, "context", fmt.Errorf("no phases ready (pipeline complete or blocked)"))
+		}
+		if len(ready) > 1 {
+			// Concurrent assembly for parallel phases (spec+design).
+			var names []string
+			for _, r := range ready {
+				names = append(names, string(r))
+			}
+			phase = strings.Join(names, "+")
+			if err := sddctx.AssembleConcurrent(target, ready, p); err != nil {
+				return errs.WriteError(stderr, "context", err)
+			}
+		} else {
+			phase = string(ready[0])
+			if err := sddctx.Assemble(target, ready[0], p); err != nil {
+				return errs.WriteError(stderr, "context", err)
+			}
+		}
 	}
 
-	// Single phase ready.
-	if err := sddctx.Assemble(stdout, ready[0], p); err != nil {
-		return errs.WriteError(stderr, "context", err)
+	if jsonOut {
+		content := buf.String()
+		out := struct {
+			Command string `json:"command"`
+			Status  string `json:"status"`
+			Change  string `json:"change"`
+			Phase   string `json:"phase"`
+			Context string `json:"context"`
+			Bytes   int    `json:"bytes"`
+			Tokens  int    `json:"tokens"`
+		}{
+			Command: "context",
+			Status:  "success",
+			Change:  name,
+			Phase:   phase,
+			Context: content,
+			Bytes:   len(content),
+			Tokens:  len(content) / 4,
+		}
+		data, _ := json.MarshalIndent(out, "", "  ")
+		fmt.Fprintln(stdout, string(data))
 	}
+
 	return nil
 }
 
@@ -737,6 +825,91 @@ func runHealth(args []string, stdout io.Writer, stderr io.Writer) error {
 		Stale:        st.IsStale(staleThreshold),
 		StaleHours:   st.StaleHours(),
 		Warnings:     warnings,
+	}
+
+	data, _ := json.MarshalIndent(out, "", "  ")
+	fmt.Fprintln(stdout, string(data))
+	return nil
+}
+
+func runDump(args []string, stdout io.Writer, stderr io.Writer) error {
+	if len(args) < 1 {
+		return errs.Usage("usage: sdd dump <name>")
+	}
+
+	name := args[0]
+
+	changeDir, err := resolveChangeDir(name)
+	if err != nil {
+		return errs.WriteError(stderr, "dump", err)
+	}
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		return errs.WriteError(stderr, "dump", fmt.Errorf("get working directory: %w", err))
+	}
+
+	// Load state.
+	statePath := filepath.Join(changeDir, "state.json")
+	st, err := state.Load(statePath)
+	if err != nil {
+		return errs.WriteError(stderr, "dump", fmt.Errorf("load state: %w", err))
+	}
+
+	// Load config.
+	configPath := filepath.Join(cwd, "openspec", "config.yaml")
+	cfg, err := config.Load(configPath)
+	if err != nil {
+		return errs.WriteError(stderr, "dump", fmt.Errorf("load config: %w", err))
+	}
+
+	// List artifacts.
+	arts, err := artifacts.List(changeDir)
+	if err != nil {
+		return errs.WriteError(stderr, "dump", fmt.Errorf("list artifacts: %w", err))
+	}
+
+	pending, err := artifacts.ListPending(changeDir)
+	if err != nil {
+		return errs.WriteError(stderr, "dump", fmt.Errorf("list pending: %w", err))
+	}
+
+	// Load pipeline metrics.
+	pm := sddctx.LoadPipelineMetrics(changeDir)
+
+	// Read cache hash files.
+	cacheKeys := make(map[string]string)
+	cacheDir := filepath.Join(changeDir, ".cache")
+	hashFiles, err := filepath.Glob(filepath.Join(cacheDir, "*.hash"))
+	if err == nil {
+		for _, hf := range hashFiles {
+			base := strings.TrimSuffix(filepath.Base(hf), ".hash")
+			raw, err := os.ReadFile(hf)
+			if err != nil {
+				continue
+			}
+			cacheKeys[base] = strings.TrimSpace(string(raw))
+		}
+	}
+
+	out := struct {
+		Command   string                   `json:"command"`
+		Change    string                   `json:"change"`
+		State     *state.State             `json:"state"`
+		Config    *config.Config           `json:"config"`
+		Artifacts []artifacts.ArtifactInfo `json:"artifacts"`
+		Pending   []artifacts.ArtifactInfo `json:"pending"`
+		Metrics   *sddctx.PipelineMetrics  `json:"metrics"`
+		CacheKeys map[string]string        `json:"cache_keys"`
+	}{
+		Command:   "dump",
+		Change:    name,
+		State:     st,
+		Config:    cfg,
+		Artifacts: arts,
+		Pending:   pending,
+		Metrics:   pm,
+		CacheKeys: cacheKeys,
 	}
 
 	data, _ := json.MarshalIndent(out, "", "  ")

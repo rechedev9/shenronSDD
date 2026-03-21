@@ -2,6 +2,7 @@ package config
 
 // Config represents the project-level SDD configuration (openspec/config.yaml).
 type Config struct {
+	Version       int            `yaml:"version"        json:"version"`
 	ProjectName   string         `yaml:"project_name"   json:"project_name"`
 	Stack         Stack          `yaml:"stack"           json:"stack"`
 	SkillsPath    string         `yaml:"skills_path"     json:"skills_path"`

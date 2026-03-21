@@ -9,6 +9,8 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+const ConfigVersion = 1
+
 var ErrNoManifest = errors.New("no recognized project manifest found")
 
 // manifestInfo maps manifest filenames to language/stack detection info.
@@ -81,6 +83,7 @@ func Detect(projectDir string) (*Config, error) {
 	name := filepath.Base(projectDir)
 
 	cfg := &Config{
+		Version:     ConfigVersion,
 		ProjectName: name,
 		Stack: Stack{
 			Language:  primary.Language,
@@ -108,6 +111,9 @@ func Load(path string) (*Config, error) {
 	var cfg Config
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("parse config: %w", err)
+	}
+	if cfg.Version != 0 && cfg.Version != ConfigVersion {
+		fmt.Fprintf(os.Stderr, "warning: config version %d differs from supported version %d\n", cfg.Version, ConfigVersion)
 	}
 	return &cfg, nil
 }

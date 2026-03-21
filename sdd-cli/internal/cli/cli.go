@@ -47,6 +47,8 @@ func Run(args []string, stdout, stderr io.Writer) error {
 		return runDiff(rest, stdout, stderr)
 	case "health":
 		return runHealth(rest, stdout, stderr)
+	case "dump":
+		return runDump(rest, stdout, stderr)
 	case "--version", "version":
 		fmt.Fprintln(stdout, version)
 		return nil
@@ -87,6 +89,7 @@ func printHelp(w io.Writer) {
 	fmt.Fprintln(w, "  list              List all active changes")
 	fmt.Fprintln(w, "  diff <name>       List files changed since 'sdd new' was run")
 	fmt.Fprintln(w, "  health <name>     Pipeline health: progress, cache stats, warnings")
+	fmt.Fprintln(w, "  dump <name>       Dump full debug state as JSON")
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Other:")
 	fmt.Fprintln(w, "  version           Print version")
@@ -112,7 +115,7 @@ Exit:   0 success, 1 error, 2 usage`,
 
 	"new": `sdd new — Start a new change
 
-Usage: sdd new <name> "<description>"
+Usage: sdd new <name> "<description>" [--json]
 
 Creates openspec/changes/<name>/ with initial state.json, then runs
 the explore context assembler and prints it to stdout.
@@ -121,12 +124,16 @@ Arguments:
   name          Change name (kebab-case)
   description   Brief intent description
 
+Flags:
+  --json        Output JSON envelope instead of explore context
+
 Output: Explore context to stdout (SKILL + project info + file tree).
+        With --json: JSON with change name, description, change_dir, current_phase.
 Exit:   0 success, 1 error, 2 usage`,
 
 	"context": `sdd context — Assemble phase context
 
-Usage: sdd context <name> [phase]
+Usage: sdd context <name> [phase] [--json]
 
 Loads the SKILL.md for the phase, relevant artifacts, and source context,
 then prints the assembled context to stdout. If phase is omitted, uses
@@ -136,7 +143,11 @@ Arguments:
   name          Change name
   phase         Optional: explore, propose, spec, design, tasks, apply, review, clean
 
+Flags:
+  --json        Wrap assembled context in JSON envelope with byte/token counts
+
 Output: Assembled context to stdout.
+        With --json: JSON with context string, bytes, tokens.
 Exit:   0 success, 1 error, 2 usage`,
 
 	"write": `sdd write — Promote artifact and advance state
@@ -215,6 +226,19 @@ Arguments:
   name          Change name
 
 Output: JSON with files list, count, and base_ref SHA.
+Exit:   0 success, 1 error, 2 usage`,
+
+	"dump": `sdd dump — Debug state snapshot
+
+Usage: sdd dump <name>
+
+Outputs full workflow state as indented JSON: state machine, config,
+artifact inventory, cache hashes, and pipeline metrics.
+
+Arguments:
+  name          Change name
+
+Output: JSON debug snapshot.
 Exit:   0 success, 1 error, 2 usage`,
 
 	"archive": `sdd archive — Archive completed change
