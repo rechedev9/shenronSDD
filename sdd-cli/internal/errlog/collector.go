@@ -77,8 +77,8 @@ func Record(cwd string, entry ErrorEntry) {
 	}
 
 	dir := filepath.Dir(LogPath(cwd))
-	_ = os.MkdirAll(dir, 0o755)
-	_ = fsutil.AtomicWrite(LogPath(cwd), data)
+	_ = os.MkdirAll(dir, 0o755)                // best-effort dir creation
+	_ = fsutil.AtomicWrite(LogPath(cwd), data) // best-effort error log persistence
 }
 
 // RecurringFingerprints returns fingerprints seen >= threshold times with their counts.

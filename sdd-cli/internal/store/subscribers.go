@@ -22,7 +22,7 @@ func RegisterSubscribers(broker *events.Broker, s *Store) {
 		if !ok {
 			return
 		}
-		_ = s.InsertPhaseEvent(context.Background(), PhaseEvent{
+		_ = s.InsertPhaseEvent(context.Background(), PhaseEvent{ // best-effort telemetry; don't block pipeline
 			Timestamp:  time.Now().UTC(),
 			Change:     filepath.Base(p.ChangeDir),
 			Phase:      p.Phase,
@@ -40,7 +40,7 @@ func RegisterSubscribers(broker *events.Broker, s *Store) {
 			return
 		}
 		for _, cmd := range p.Results {
-			_ = s.InsertVerifyEvent(context.Background(), VerifyEvent{
+			_ = s.InsertVerifyEvent(context.Background(), VerifyEvent{ // best-effort telemetry
 				Timestamp:   time.Now().UTC(),
 				Change:      p.Change,
 				CommandName: cmd.Name,
