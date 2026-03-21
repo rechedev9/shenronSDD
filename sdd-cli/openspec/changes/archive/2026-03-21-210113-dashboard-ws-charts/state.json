@@ -1,0 +1,20 @@
+{
+  "name": "dashboard-ws-charts",
+  "description": "Replace HTMX polling with WebSocket push and add 5 ECharts visualizations (tokens over time, phase durations, cache ratio, verify timeline, phase heatmap) behind a tab bar",
+  "current_phase": "archive",
+  "phases": {
+    "apply": "completed",
+    "archive": "pending",
+    "clean": "completed",
+    "design": "completed",
+    "explore": "completed",
+    "propose": "completed",
+    "review": "completed",
+    "spec": "completed",
+    "tasks": "completed",
+    "verify": "completed"
+  },
+  "created_at": "2026-03-21T20:44:58.553770939Z",
+  "updated_at": "2026-03-21T21:01:09.305673899Z",
+  "base_ref": "281db86c23bfb72bf807286d72e5362a403a7ebd"
+}

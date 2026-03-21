@@ -1,0 +1,933 @@
+
+--- SKILL ---
+
+---
+name: sdd-propose
+description: >
+  Create a change proposal from exploration analysis. Produces proposal.md with intent, scope, approach, risks, and rollback plan.
+  Trigger: When user runs /sdd-new or after sdd-explore completes successfully.
+license: MIT
+metadata:
+  version: "1.0"
+---
+
+# SDD Propose
+
+You are executing the **propose** phase inline. A proposal is the human-readable contract that must be approved before any specifications, design, or implementation work begins. It captures the WHAT, WHY, and high-level HOW of a change.
+
+## Activation
+
+User runs `/sdd-new <change-name> "<intent>"`. The change name must be kebab-case. Reads `openspec/changes/{changeName}/exploration.md` if it exists.
+
+## Execution Steps
+
+### Step 1: Load Project Context
+
+1. Read `openspec/config.yaml` for:
+   - Project stack and architecture
+   - Coding conventions and constraints
+   - Required proposal sections (from `phases.proposal.required_sections`)
+2. If `config.yaml` does not exist, return `status: error` recommending `sdd-init` first.
+
+### Step 2: Load Exploration Results
+
+1. If `exploration_path` is provided, read the `exploration.md` file.
+2. If `exploration_data` is provided, use the inline data.
+3. If neither is provided:
+   - Check if `openspec/changes/{change_name}/exploration.md` exists (may have been created by a prior explore phase).
+   - If not found, proceed without exploration data but add a warning that the proposal may lack depth.
+4. Extract from exploration:
+   - Current state summary
+   - Relevant files and their purposes
+   - Risk assessment
+   - Recommended approach
+   - Open questions
+
+### Step 2b: Requirement Clarification Gate
+
+This step ensures that critical ambiguities are resolved before writing the proposal. It prevents building proposals on assumptions that could invalidate the entire approach.
+
+#### 2b-1. Check for BLOCKING Questions
+
+1. If exploration data is available, read the `blocking_questions` field (or the "Clarification Required (BLOCKING)" section of exploration.md).
+2. If no exploration data is available, perform lightweight ambiguity detection on the `intent`:
+
+| Check | Trigger | Example |
+|---|---|---|
+| Vague scope | Intent uses words like "improve", "refactor", "fix" without specifics | "Improve the dashboard" — improve what? performance? UX? data accuracy? |
+| Multiple interpretations | Intent could lead to fundamentally different approaches | "Add notifications" — email? push? in-app? all three? |
+| Missing constraints | Intent doesn't specify boundaries that affect architecture | "Support multiple users" — how many? 10 or 10 million? |
+| Undefined integration | Intent references external systems without details | "Connect to payment provider" — which one? what API version? |
+
+3. Generate any new BLOCKING questions found that weren't in the exploration.
+
+#### 2b-2. Evaluate Clarification Status
+
+Three possible states:
+
+**State A: No BLOCKING questions** → Proceed to Step 3.
+
+**State B: BLOCKING questions exist AND `clarification_answers` provided** → Validate that every BLOCKING question has a corresponding answer. If any answer is missing or unclear, add it to the questions list and return `needs_clarification`. Otherwise, incorporate answers into the proposal context and proceed to Step 3.
+
+**State C: BLOCKING questions exist AND NO `clarification_answers`** → Return early with:
+
+```yaml
+phase: propose
+status: needs_clarification
+data:
+  change_name: <string>
+  blocking_questions:
+    - question: <specific question>
+      why_it_matters: <consequence>
+      options:
+        - label: "A"
+          description: <option>
+          consequence: <result>
+        - label: "B"
+          description: <option>
+          consequence: <result>
+      recommendation: <default if forced to choose>
+  deferred_questions:
+    - <string>
+  message: "Cannot write proposal — {N} blocking question(s) require your input. Please answer and re-invoke."
+```
+
+Present these questions to the user. When they provide answers, re-run `/sdd-new` with the answers incorporated.
+
+#### 2b-3. Incorporate Answers
+
+When `clarification_answers` are provided:
+1. Use the answers to resolve approach decisions, scope boundaries, and constraints.
+2. Reference the answers explicitly in the proposal (e.g., in Key Decisions: "Per user clarification: using WebSocket over SSE for real-time updates").
+3. If an answer creates new questions (rare), classify them. New BLOCKING questions trigger another `needs_clarification` return (max 2 clarification rounds to prevent fatigue).
+
+### Step 3: Validate Change Name
+
+1. Ensure `change_name` is kebab-case (lowercase, hyphens, no spaces).
+2. Check if `openspec/changes/{change_name}/` already exists:
+   - If `proposal.md` exists, return `status: error` with message "Proposal already exists. Use sdd-continue to proceed or choose a different change name."
+   - If directory exists but no `proposal.md`, it is safe to proceed (exploration may have been written).
+
+### Step 4: Assess Change Size
+
+Determine the change size based on exploration data and intent:
+
+| Size   | Criteria                                          | Recommendation           |
+|--------|---------------------------------------------------|--------------------------|
+| Small  | 1-3 files modified, no new dependencies, no DB    | Single proposal is fine  |
+| Medium | 4-10 files, may add dependencies, minor DB change | Single proposal is fine  |
+| Large  | 10+ files, new dependencies, DB migration, new API| Recommend splitting      |
+
+If the change is **large** and `size_hint` was not explicitly set to `large`:
+- Include a warning in the proposal recommending it be split into smaller changes
+- Suggest concrete split points (e.g., "Phase 1: Add database schema, Phase 2: Add API endpoints, Phase 3: Add UI")
+
+### Step 5: Create Change Directory
+
+Create `openspec/changes/{change_name}/` if it does not already exist.
+
+### Step 6: Write proposal.md
+
+Write `openspec/changes/{change_name}/proposal.md` with the following required sections:
+
+```markdown
+# Proposal: {Change Name (title case)}
+
+**Change ID**: {change_name}
+**Date**: {ISO 8601 timestamp}
+**Status**: draft
+
+---
+
+## Intent
+
+{What is being changed and why, in 1-3 sentences. Focus on the problem being solved and the value delivered. Do not describe implementation details here.}
+
+## Scope
+
+### In Scope
+
+- {Specific deliverable 1}
+- {Specific deliverable 2}
+- {Specific deliverable 3}
+
+### Out of Scope
+
+- {Explicitly excluded item 1 -- and brief reason why}
+- {Explicitly excluded item 2 -- and brief reason why}
+
+## Approach
+
+{High-level strategy for implementing this change. 1-2 paragraphs describing the overall approach without getting into file-level details. Reference the recommended approach from exploration if available.}
+
+### Key Decisions
+
+| Decision                | Choice            | Rationale                          |
+|-------------------------|-------------------|------------------------------------|
+| {Decision point 1}     | {Chosen approach} | {Why this was chosen}              |
+| {Decision point 2}     | {Chosen approach} | {Why this was chosen}              |
+
+## Affected Areas
+
+| Module / Area           | File Path                        | Change Type     | Risk Level |
+|-------------------------|----------------------------------|-----------------|------------|
+| {Module name}           | {absolute file path}             | create/modify/delete | low/medium/high |
+| {Module name}           | {absolute file path}             | create/modify/delete | low/medium/high |
+
+**Total files affected**: {count}
+**New files**: {count}
+**Modified files**: {count}
+**Deleted files**: {count}
+
+## Risks
+
+| Risk                    | Probability | Impact  | Mitigation                         |
+|-------------------------|-------------|---------|------------------------------------|
+| {Risk description}      | low/medium/high | low/medium/high | {How to prevent or handle this} |
+| {Risk description}      | low/medium/high | low/medium/high | {How to prevent or handle this} |
+
+**Overall Risk Level**: {low | medium | high}
+
+## Rollback Plan
+
+{MANDATORY section. Describe exactly how to undo this change if something goes wrong.}
+
+### Steps to Rollback
+
+1. {Specific step 1 with git command or file operation}
+2. {Specific step 2}
+3. {Specific step 3}
+
+### Rollback Verification
+
+- {How to verify the rollback was successful}
+- {What state the system should be in after rollback}
+
+## Dependencies
+
+### Internal Dependencies
+
+- {Module or file that must exist/be modified first}
+
+### External Dependencies
+
+| Package              | Version  | Purpose                    | Already Installed |
+|----------------------|----------|----------------------------|-------------------|
+| {package-name}       | {semver} | {why it is needed}         | yes/no            |
+
+### Infrastructure Dependencies
+
+- {Database migration needed: yes/no}
+- {New environment variables: list or none}
+- {New services: list or none}
+
+## Success Criteria
+
+All of the following must be true for this change to be considered complete:
+
+- [ ] {Measurable criterion 1, e.g., "All new endpoints return typed responses with proper error handling"}
+- [ ] {Measurable criterion 2, e.g., "Unit tests cover all new functions with >80% branch coverage"}
+- [ ] {Measurable criterion 3, e.g., "Project's build/typecheck command passes with zero errors"}
+- [ ] {Measurable criterion 4, e.g., "Project's lint command passes with zero warnings"}
+- [ ] {Measurable criterion 5, e.g., "No type-system escape hatches or compiler suppressions in new code"}
+- [ ] {Measurable criterion 6, e.g., "Rollback plan tested and verified"}
+
+## Open Questions
+
+{List any unresolved questions from exploration or new questions raised during proposal writing. These MUST be answered before moving to the spec phase.}
+
+- {Question 1}
+- {Question 2}
+
+---
+
+**Next Step**: Review and approve this proposal, then run `sdd-spec` and `sdd-design` (can run in parallel).
+```
+
+### Step 7: Validate Proposal Completeness
+
+Before returning, validate that the proposal has:
+
+1. **Intent** -- not empty, not just restating the change name
+2. **Scope** -- both in-scope AND out-of-scope items listed
+3. **Approach** -- at least one key decision with rationale
+4. **Affected Areas** -- at least one file path (absolute, not relative)
+5. **Risks** -- at least one risk identified (every change has risks)
+6. **Rollback Plan** -- contains specific steps (not "revert the commit")
+7. **Dependencies** -- section present even if empty ("None" is acceptable)
+8. **Success Criteria** -- at least 3 measurable criteria including type safety and test passing
+
+If any section is missing or inadequate, add it with a `[TODO]` marker and include a warning in the summary output.
+
+### Step 8: Present Summary
+
+Present a markdown summary to the user, then STOP. Do not proceed automatically.
+
+If blocking clarification questions exist (status: PARTIAL), output the questions and stop — do not write `proposal.md` until answers are provided.
+
+**On success, output:**
+
+```markdown
+## SDD Propose: {change_name}
+
+**Size**: {small | medium | large}  |  **Risk**: {low | medium | high}  |  **Files affected**: {N}
+
+### Proposal Written
+`openspec/changes/{change_name}/proposal.md`
+
+### Scope
+- **In scope**: {N} items
+- **Out of scope**: {N} items explicitly excluded
+
+### Key Decisions
+{decision table summary — 1-2 rows}
+
+{If open questions: ### Open Questions ({N})\n{questions list}\n}
+{If warnings: ### ⚠ Warnings\n{warnings list}\n}
+{If large change: ### ⚠ Size Warning\nThis change is large. Consider splitting into: {split suggestions}\n}
+
+**Next step**: Review `openspec/changes/{change_name}/proposal.md`. When satisfied, run `/sdd-spec` and `/sdd-design` (these can run in parallel, each in its own session).
+```
+
+**On PARTIAL (blocking questions):**
+
+```markdown
+## SDD Propose: Clarification Needed
+
+Cannot write proposal — {N} blocking question(s) require your input.
+
+### Q1: {specific question}
+- **Why it matters**: {consequence}
+- **Options**: A: {option} → {consequence} | B: {option} → {consequence}
+- **Recommendation**: {default}
+
+Re-run `/sdd-new {change_name} "<intent>"` after answering.
+```
+
+## Rules and Constraints
+
+1. **The proposal is a HUMAN-READABLE document** for review and approval. Write clearly, not in code-speak.
+2. **Rollback Plan is NEVER optional.** Every change must be reversible. If it truly cannot be rolled back (e.g., destructive database migration), state that explicitly with mitigation.
+3. **Scope must explicitly state what is OUT of scope.** This prevents scope creep and miscommunication.
+4. **Success criteria must be verifiable.** Not "code works well" but "all tests pass, no type errors, API returns 200 for valid input."
+5. **If the change is too large** (10+ files, multiple domains), recommend splitting with concrete split suggestions.
+6. **All file paths must be absolute.** Never use relative paths in the affected areas table.
+7. **Never modify source code.** The proposal phase only writes to `openspec/changes/{change_name}/`.
+8. **Never skip risk assessment.** Even "simple" changes have risks (regression, performance, compatibility).
+9. **Reference exploration data** when available. The proposal should build on exploration findings, not ignore them.
+10. **Open questions must be answerable.** Not "will this work?" but "should we use WebSocket or SSE for real-time updates?"
+11. **Respect project conventions** from `config.yaml` and `CLAUDE.md`. Success criteria must include type safety and error handling checks consistent with the project's rules.
+12. **Do not prescribe implementation details.** The proposal says WHAT and WHY, not exactly HOW at the code level. That is the design phase's job.
+
+## Error Handling
+
+- If `openspec/config.yaml` does not exist: return `status: error` with message "Run sdd-init first."
+- If `change_name` is not kebab-case: return `status: error` with corrected suggestion.
+- If `proposal.md` already exists: return `status: error` with guidance to use sdd-continue.
+- If intent is empty or not provided: return `status: error` requesting intent description.
+- All errors include the phase name (`propose`) and a human-readable message.
+
+## PARCER Contract
+
+```yaml
+phase: propose
+preconditions:
+  - exploration.md exists at openspec/changes/{changeName}/
+postconditions:
+  - proposal.md written with all required_sections from config.yaml phases.proposal
+  - proposal.md contains change size and risk level assessment
+  - proposal.md written with all required sections, or clarification questions presented
+```
+
+
+--- CHANGE ---
+
+Name: dashboard-ws-charts
+Description: Replace HTMX polling with WebSocket push and add 5 ECharts visualizations (tokens over time, phase durations, cache ratio, verify timeline, phase heatmap) behind a tab bar
+
+--- PROJECT ---
+
+Project: sdd-cli
+Language: go
+Build Tool: go
+Manifests: go.mod
+
+--- FILE TREE ---
+
+.golangci.yml
+Makefile
+cmd/sdd/main.go
+docs/superpowers/specs/2026-03-21-sdd-dashboard-design.md
+go.mod
+go.sum
+internal/artifacts/artifacts.go
+internal/artifacts/artifacts_test.go
+internal/artifacts/list.go
+internal/artifacts/promote.go
+internal/artifacts/reader.go
+internal/artifacts/writer.go
+internal/cli/cli.go
+internal/cli/cli_test.go
+internal/cli/cmd_archive.go
+internal/cli/cmd_context.go
+internal/cli/cmd_dashboard.go
+internal/cli/cmd_diff.go
+internal/cli/cmd_dump.go
+internal/cli/cmd_errors.go
+internal/cli/cmd_health.go
+internal/cli/cmd_init.go
+internal/cli/cmd_list.go
+internal/cli/cmd_new.go
+internal/cli/cmd_status.go
+internal/cli/cmd_verify.go
+internal/cli/cmd_write.go
+internal/cli/commands.go
+internal/cli/completion.go
+internal/cli/doctor.go
+internal/cli/errs/errs.go
+internal/cli/errs/errs_test.go
+internal/cli/integration_test.go
+internal/cli/verbosity.go
+internal/cli/verbosity_test.go
+internal/config/config.go
+internal/config/config_test.go
+internal/config/fuzz_test.go
+internal/config/init.go
+internal/config/init_test.go
+internal/config/types.go
+internal/context/apply.go
+internal/context/cache.go
+internal/context/clean.go
+internal/context/context.go
+internal/context/context_test.go
+internal/context/design.go
+internal/context/explore.go
+internal/context/fuzz_test.go
+internal/context/propose.go
+internal/context/review.go
+internal/context/spec.go
+internal/context/subscribers.go
+internal/context/summary.go
+internal/context/summary_test.go
+internal/context/tasks.go
+internal/csync/lazyslice.go
+internal/csync/lazyslice_test.go
+internal/dashboard/server.go
+internal/dashboard/server_test.go
+internal/dashboard/static/htmx.min.js
+internal/dashboard/templates/base.html
+internal/dashboard/templates/errors.html
+internal/dashboard/templates/kpi.html
+internal/dashboard/templates/pipelines.html
+internal/errlog/collector.go
+internal/errlog/collector_test.go
+internal/events/broker.go
+internal/events/broker_test.go
+internal/fsutil/atomic.go
+internal/fsutil/atomic_test.go
+internal/phase/phase.go
+internal/phase/registry.go
+internal/phase/registry_test.go
+internal/sddlog/sddlog.go
+internal/state/fuzz_test.go
+internal/state/resolve.go
+internal/state/resolve_test.go
+internal/state/state.go
+internal/state/state_test.go
+internal/state/types.go
+internal/state/types_test.go
+internal/store/store.go
+internal/store/store_test.go
+internal/store/subscribers.go
+internal/verify/archive.go
+internal/verify/verify.go
+internal/verify/verify_test.go
+openspec/changes/archive/2026-03-20-181906-add-diff-command/archive-manifest.md
+openspec/changes/archive/2026-03-20-181906-add-diff-command/clean-report.md
+openspec/changes/archive/2026-03-20-181906-add-diff-command/design.md
+openspec/changes/archive/2026-03-20-181906-add-diff-command/exploration.md
+openspec/changes/archive/2026-03-20-181906-add-diff-command/proposal.md
+openspec/changes/archive/2026-03-20-181906-add-diff-command/review-report.md
+openspec/changes/archive/2026-03-20-181906-add-diff-command/specs/spec.md
+openspec/changes/archive/2026-03-20-181906-add-diff-command/state.json
+openspec/changes/archive/2026-03-20-181906-add-diff-command/tasks.md
+openspec/changes/archive/2026-03-20-181906-add-diff-command/verify-report.md
+openspec/changes/archive/2026-03-20-190624-steipete-patterns/.cache/metrics.json
+openspec/changes/archive/2026-03-20-190624-steipete-patterns/archive-manifest.md
+openspec/changes/archive/2026-03-20-190624-steipete-patterns/clean-report.md
+openspec/changes/archive/2026-03-20-190624-steipete-patterns/design.md
+openspec/changes/archive/2026-03-20-190624-steipete-patterns/exploration.md
+openspec/changes/archive/2026-03-20-190624-steipete-patterns/proposal.md
+openspec/changes/archive/2026-03-20-190624-steipete-patterns/review-report.md
+openspec/changes/archive/2026-03-20-190624-steipete-patterns/specs/spec.md
+openspec/changes/archive/2026-03-20-190624-steipete-patterns/state.json
+openspec/changes/archive/2026-03-20-190624-steipete-patterns/tasks.md
+openspec/changes/archive/2026-03-20-190624-steipete-patterns/verify-report.md
+openspec/changes/archive/2026-03-20-192036-smart-skip/.cache/metrics.json
+openspec/changes/archive/2026-03-20-192036-smart-skip/archive-manifest.md
+openspec/changes/archive/2026-03-20-192036-smart-skip/clean-report.md
+openspec/changes/archive/2026-03-20-192036-smart-skip/design.md
+openspec/changes/archive/2026-03-20-192036-smart-skip/exploration.md
+openspec/changes/archive/2026-03-20-192036-smart-skip/proposal.md
+openspec/changes/archive/2026-03-20-192036-smart-skip/review-report.md
+openspec/changes/archive/2026-03-20-192036-smart-skip/specs/spec.md
+openspec/changes/archive/2026-03-20-192036-smart-skip/state.json
+openspec/changes/archive/2026-03-20-192036-smart-skip/tasks.md
+openspec/changes/archive/2026-03-20-192036-smart-skip/verify-report.md
+openspec/changes/archive/2026-03-20-193534-resilience-patterns/.cache/metrics.json
+openspec/changes/archive/2026-03-20-193534-resilience-patterns/archive-manifest.md
+openspec/changes/archive/2026-03-20-193534-resilience-patterns/clean-report.md
+openspec/changes/archive/2026-03-20-193534-resilience-patterns/design.md
+openspec/changes/archive/2026-03-20-193534-resilience-patterns/exploration.md
+openspec/changes/archive/2026-03-20-193534-resilience-patterns/proposal.md
+openspec/changes/archive/2026-03-20-193534-resilience-patterns/review-report.md
+openspec/changes/archive/2026-03-20-193534-resilience-patterns/specs/spec.md
+openspec/changes/archive/2026-03-20-193534-resilience-patterns/state.json
+openspec/changes/archive/2026-03-20-193534-resilience-patterns/tasks.md
+openspec/changes/archive/2026-03-20-193534-resilience-patterns/verify-report.md
+openspec/changes/archive/2026-03-21-164757-concurrency-performance/.cache/design.ctx
+openspec/changes/archive/2026-03-21-164757-concurrency-performance/.cache/design.hash
+openspec/changes/archive/2026-03-21-164757-concurrency-performance/.cache/explore.ctx
+openspec/changes/archive/2026-03-21-164757-concurrency-performance/.cache/explore.hash
+openspec/changes/archive/2026-03-21-164757-concurrency-performance/.cache/metrics.json
+openspec/changes/archive/2026-03-21-164757-concurrency-performance/.cache/propose.ctx
+openspec/changes/archive/2026-03-21-164757-concurrency-performance/.cache/propose.hash
+openspec/changes/archive/2026-03-21-164757-concurrency-performance/.cache/spec.ctx
+openspec/changes/archive/2026-03-21-164757-concurrency-performance/.cache/spec.hash
+openspec/changes/archive/2026-03-21-164757-concurrency-performance/.cache/tasks.ctx
+openspec/changes/archive/2026-03-21-164757-concurrency-performance/.cache/tasks.hash
+openspec/changes/archive/2026-03-21-164757-concurrency-performance/archive-manifest.md
+openspec/changes/archive/2026-03-21-164757-concurrency-performance/clean-report.md
+openspec/changes/archive/2026-03-21-164757-concurrency-performance/design.md
+openspec/changes/archive/2026-03-21-164757-concurrency-performance/exploration.md
+openspec/changes/archive/2026-03-21-164757-concurrency-performance/proposal.md
+openspec/changes/archive/2026-03-21-164757-concurrency-performance/review-report.md
+openspec/changes/archive/2026-03-21-164757-concurrency-performance/specs/spec.md
+openspec/changes/archive/2026-03-21-164757-concurrency-performance/state.json
+openspec/changes/archive/2026-03-21-164757-concurrency-performance/tasks.md
+openspec/changes/archive/2026-03-21-164757-concurrency-performance/verify-report.md
+openspec/changes/archive/2026-03-21-174937-context-cascade/.cache/design.ctx
+openspec/changes/archive/2026-03-21-174937-context-cascade/.cache/design.hash
+openspec/changes/archive/2026-03-21-174937-context-cascade/.cache/explore.ctx
+openspec/changes/archive/2026-03-21-174937-context-cascade/.cache/explore.hash
+openspec/changes/archive/2026-03-21-174937-context-cascade/.cache/metrics.json
+openspec/changes/archive/2026-03-21-174937-context-cascade/.cache/propose.ctx
+openspec/changes/archive/2026-03-21-174937-context-cascade/.cache/propose.hash
+openspec/changes/archive/2026-03-21-174937-context-cascade/.cache/spec.ctx
+openspec/changes/archive/2026-03-21-174937-context-cascade/.cache/spec.hash
+openspec/changes/archive/2026-03-21-174937-context-cascade/.cache/tasks.ctx
+openspec/changes/archive/2026-03-21-174937-context-cascade/.cache/tasks.hash
+openspec/changes/archive/2026-03-21-174937-context-cascade/archive-manifest.md
+openspec/changes/archive/2026-03-21-174937-context-cascade/design.md
+openspec/changes/archive/2026-03-21-174937-context-cascade/exploration.md
+openspec/changes/archive/2026-03-21-174937-context-cascade/proposal.md
+openspec/changes/archive/2026-03-21-174937-context-cascade/specs/spec.md
+openspec/changes/archive/2026-03-21-174937-context-cascade/state.json
+openspec/changes/archive/2026-03-21-174937-context-cascade/tasks.md
+openspec/changes/archive/2026-03-21-174940-dev-experience/.cache/explore.ctx
+openspec/changes/archive/2026-03-21-174940-dev-experience/.cache/explore.hash
+openspec/changes/archive/2026-03-21-174940-dev-experience/.cache/metrics.json
+openspec/changes/archive/2026-03-21-174940-dev-experience/.cache/propose.ctx
+openspec/changes/archive/2026-03-21-174940-dev-experience/.cache/propose.hash
+openspec/changes/archive/2026-03-21-174940-dev-experience/archive-manifest.md
+openspec/changes/archive/2026-03-21-174940-dev-experience/design.md
+openspec/changes/archive/2026-03-21-174940-dev-experience/exploration.md
+openspec/changes/archive/2026-03-21-174940-dev-experience/proposal.md
+openspec/changes/archive/2026-03-21-174940-dev-experience/specs/spec.md
+openspec/changes/archive/2026-03-21-174940-dev-experience/state.json
+openspec/changes/archive/2026-03-21-174940-dev-experience/tasks.md
+openspec/changes/archive/2026-03-21-174944-phase-interface/.cache/explore.ctx
+openspec/changes/archive/2026-03-21-174944-phase-interface/.cache/explore.hash
+openspec/changes/archive/2026-03-21-174944-phase-interface/.cache/metrics.json
+openspec/changes/archive/2026-03-21-174944-phase-interface/.cache/propose.ctx
+openspec/changes/archive/2026-03-21-174944-phase-interface/.cache/propose.hash
+openspec/changes/archive/2026-03-21-174944-phase-interface/.cache/spec.ctx
+openspec/changes/archive/2026-03-21-174944-phase-interface/.cache/spec.hash
+openspec/changes/archive/2026-03-21-174944-phase-interface/.cache/tasks.ctx
+openspec/changes/archive/2026-03-21-174944-phase-interface/.cache/tasks.hash
+openspec/changes/archive/2026-03-21-174944-phase-interface/archive-manifest.md
+openspec/changes/archive/2026-03-21-174944-phase-interface/design.md
+openspec/changes/archive/2026-03-21-174944-phase-interface/exploration.md
+openspec/changes/archive/2026-03-21-174944-phase-interface/proposal.md
+openspec/changes/archive/2026-03-21-174944-phase-interface/specs/spec.md
+openspec/changes/archive/2026-03-21-174944-phase-interface/state.json
+openspec/changes/archive/2026-03-21-174944-phase-interface/tasks.md
+openspec/config.yaml
+
+--- EXPLORATION ---
+
+# Exploration: dashboard-ws-charts
+
+**Change:** dashboard-ws-charts
+**Phase:** explore
+**Date:** 2026-03-21
+
+## 1. Current State
+
+### Dashboard architecture
+
+The dashboard is a self-contained `internal/dashboard` package with a single
+`Server` struct. It serves three HTMX fragment endpoints that the browser polls
+every 3 seconds:
+
+- `GET /fragments/kpi` → renders `kpi.html` (Go template, server-side)
+- `GET /fragments/pipelines` → renders `pipelines.html`
+- `GET /fragments/errors` → renders `errors.html`
+- `GET /static/htmx.min.js` → serves the ~50 KB vendored HTMX file
+
+`base.html` is a full-page shell that contains three `<div>` elements with
+`hx-get` / `hx-trigger="load, every 3s"` attributes. All rendering is
+server-side Go templates. The browser holds no state beyond what HTMX manages
+transparently.
+
+There is no persistent connection. Each 3-second tick spawns three independent
+HTTP requests. The only data flow is pull (browser → server).
+
+### Current `MetricsReader` interface (server.go:25)
+
+```go
+type MetricsReader interface {
+    TokenSummary(ctx context.Context) (*store.TokenStats, error)
+    PhaseTokensByChange(ctx context.Context) ([]store.ChangeTokens, error)
+    RecentErrors(ctx context.Context, limit int) ([]store.ErrorRow, error)
+}
+```
+
+`*store.Store` satisfies this interface today. The dashboard command
+(`cmd_dashboard.go`) opens the store and passes it directly to `dashboard.New`.
+
+### Store schema (store.go:109)
+
+Two tables exist today:
+
+```sql
+phase_events (id, timestamp, change, phase, bytes, tokens, cached, duration_ms)
+verify_events (id, timestamp, change, command_name, command, exit_code,
+               error_lines TEXT, fingerprint)
+```
+
+`phase_events` has all the columns needed for `TokenHistory`, `PhaseDurations`,
+and `CacheHistory` queries. `verify_events` captures failure detail (error
+lines, fingerprint) but only records failures — it has no concept of a passing
+run. A new `verify_results` table is required for the verify chart.
+
+### Event broker limitation
+
+`events.Broker` is an in-process pub/sub bus. Each `sdd` CLI invocation
+(e.g., `sdd verify foo`, `sdd write foo explore`) creates a fresh ephemeral
+broker that lives only for the duration of that OS process. The dashboard server
+runs in its own long-lived process. There is no mechanism to share a broker
+across process boundaries. SQLite (WAL mode, safe for concurrent readers) is the
+only shared persistent medium.
+
+### cmd_verify.go flow (cmd_verify.go:17)
+
+Three logical paths:
+1. **Smart-skip** (line 42): if source files unchanged since last PASS, exits
+   early returning JSON `{skipped: true}`. Does not touch the store at all.
+2. **Normal run + pass**: runs `verify.Run`, writes report. Emits nothing to
+   the store.
+3. **Normal run + fail**: runs `verify.Run`, writes report. Opens store via
+   `tryOpenStore`, wires broker via `newBroker`, emits `VerifyFailed` event.
+   The `store.RegisterSubscribers` wiring causes `InsertVerifyEvent` to fire for
+   each failed command.
+
+No path currently writes to the store for passing runs. The verify chart
+requires both pass and fail data, so `verify_results` must be populated on all
+three paths.
+
+### cmd_dashboard.go flow (cmd_dashboard.go:20)
+
+Opens the store → creates `dashboard.Server` → blocks on
+`srv.ListenAndServe(ctx, addr)`. No background goroutines beyond the HTTP
+server's internal ones. Adding `hub.Run(ctx)` requires starting it before
+`ListenAndServe`.
+
+### Template and static asset inventory
+
+| File | Lines | Role | Fate |
+|------|-------|------|------|
+| `templates/base.html` | 65 | Full-page shell, HTMX wiring | Full rewrite |
+| `templates/kpi.html` | 18 | KPI fragment | Delete |
+| `templates/pipelines.html` | 31 | Pipeline table fragment | Delete |
+| `templates/errors.html` | 29 | Error table fragment | Delete |
+| `static/htmx.min.js` | 1 (min) | HTMX library (~50 KB) | Delete |
+
+## 2. Relevant Files
+
+| File | Absolute Path | Relevance |
+|------|---------------|-----------|
+| `server.go` | `internal/dashboard/server.go` | Primary target: add hub field, remove 3 fragment handlers, add `/ws` route |
+| `server_test.go` | `internal/dashboard/server_test.go` | 8 tests covering fragment endpoints + htmx static — all need updating |
+| `base.html` | `internal/dashboard/templates/base.html` | Full rewrite to WS + ECharts layout |
+| `store.go` | `internal/store/store.go` | Add `verify_results` table + 5 new methods |
+| `store_test.go` | `internal/store/store_test.go` | Extend with 6+ new test cases |
+| `cmd_verify.go` | `internal/cli/cmd_verify.go` | Add `verify_results` writes on all 3 code paths |
+| `cmd_dashboard.go` | `internal/cli/cmd_dashboard.go` | Start hub goroutine before `ListenAndServe` |
+| `broker.go` | `internal/events/broker.go` | Read-only reference — no changes needed |
+| `types.go` | `internal/state/types.go` | `Phase`, `PhaseStatus` constants used for heatmap grid |
+| `go.mod` | `go.mod` | Add `github.com/coder/websocket` |
+
+New files to create:
+
+| File | Absolute Path | Role |
+|------|---------------|------|
+| `hub.go` | `internal/dashboard/hub.go` | WS hub: poll loop, diff, broadcast, initial snapshot |
+| `hub_test.go` | `internal/dashboard/hub_test.go` | Hub tests: upgrade, fan-out, dead client cleanup, diff logic |
+| `echarts.min.js` | `internal/dashboard/static/echarts.min.js` | Vendored ECharts (~200 KB tree-shaken) |
+| `dashboard.js` | `internal/dashboard/static/dashboard.js` | WS client, DOM updaters, ECharts managers |
+
+## 3. Dependency Map
+
+```
+cmd_dashboard.go
+    └── dashboard.New(db, changesDir)          [dashboard/server.go]
+            └── hub.NewHub(metrics, changesDir) [dashboard/hub.go — NEW]
+                    ├── store.TokenHistory      [store/store.go — NEW]
+                    ├── store.PhaseDurations    [store/store.go — NEW]
+                    ├── store.CacheHistory      [store/store.go — NEW]
+                    ├── store.VerifyHistory     [store/store.go — NEW]
+                    ├── store.TokenSummary      [existing]
+                    ├── store.PhaseTokensByChange [existing]
+                    ├── store.RecentErrors      [existing]
+                    └── state.Load / AllPhases  [state/types.go + state/state.go]
+
+cmd_verify.go
+    └── store.InsertVerifyResult               [store/store.go — NEW]
+            (on smart-skip, pass, and fail paths)
+
+browser
+    └── WebSocket /ws → hub.HandleWS           [dashboard/hub.go — NEW]
+            broadcasts typed JSON messages
+    └── GET /static/echarts.min.js             [dashboard/static/ — NEW]
+    └── GET /static/dashboard.js               [dashboard/static/ — NEW]
+```
+
+Packages with no changes: `context/`, `phase/`, `artifacts/`, `config/`,
+`fsutil/`, `csync/`, `sddlog/`, `errlog/`, `events/`, all other `cli/cmd_*.go`.
+
+## 4. Data Flow
+
+### Current (HTMX polling)
+
+```
+Browser                     Server                          SQLite
+  │                            │                              │
+  ├──GET /fragments/kpi──────► │──TokenSummary()───────────► │
+  │ ◄──200 HTML KPI fragment── │ ◄──TokenStats─────────────── │
+  │   (every 3s)               │                              │
+  ├──GET /fragments/pipelines─► │──os.ReadDir(changesDir)      │
+  │ ◄──200 HTML table───────── │  state.Load per entry        │
+  │                            │                              │
+  ├──GET /fragments/errors───► │──RecentErrors()──────────── ► │
+  │ ◄──200 HTML table───────── │ ◄──[]ErrorRow──────────────── │
+```
+
+### Proposed (WebSocket push)
+
+```
+Browser                     Hub goroutine (1s tick)          SQLite / FS
+  │                            │                              │
+  ├──WS connect /ws──────────► │                              │
+  │ ◄──snapshot (all types)─── │─initial DB queries──────────►│
+  │                            │                              │
+  │  [1s tick fires]           │─KPIs, pipelines, errors────► FS+DB
+  │                            │─chart rows (WHERE id>last)──►│
+  │                            │─diff against lastKnown       │
+  │ ◄──{type:"kpi", data:...}──│  (only changed types sent)   │
+  │ ◄──{type:"chart:tokens"}───│                              │
+  │                            │                              │
+  │  [JS dispatches by type]   │                              │
+  │   handleKPI(data)          │                              │
+  │   TokenChart.appendData()  │                              │
+```
+
+### Verify results write path (new)
+
+```
+sdd verify <name>                               SQLite
+  │                                               │
+  ├── smart-skip path:                            │
+  │     tryOpenStore → InsertVerifyResult         │
+  │     (passed=true, exit_code=0 for each cmd)  │
+  │                                               │
+  ├── normal run, pass:                           │
+  │     tryOpenStore → InsertVerifyResult         │
+  │     (passed=true, exit_code=0 for each cmd)  │
+  │                                               │
+  └── normal run, fail:                           │
+        tryOpenStore → InsertVerifyResult         │
+        (one row per cmd result, pass or fail)   │
+        + existing VerifyFailed event emission   │
+```
+
+## 5. Risk Assessment
+
+### R1 — WebSocket upgrade in Go stdlib HTTP server: LOW
+
+`http.Server` supports WebSocket upgrades natively via `github.com/coder/websocket`
+`Accept()`. The library handles the HTTP → WS handshake, write serialization,
+and ping/pong. No special server configuration needed. Standard pattern.
+
+### R2 — Concurrent write to dead WS connections: MEDIUM
+
+The broadcast loop must handle clients that have disconnected between the tick
+and the write. `github.com/coder/websocket` write errors on dead connections
+are deterministic and synchronous. The hub must remove dead clients under
+the same lock that guards the client map to avoid write races. The design
+accounts for this with a remove-on-error pattern.
+
+### R3 — SQLite WAL concurrent readers: LOW
+
+The store is already opened in WAL mode with `busy_timeout=5000`. The hub's
+1s tick queries are read-only and short. The CLI processes write-then-close.
+Concurrent readers and a single writer in WAL mode is SQLite's intended use
+case. No contention risk.
+
+### R4 — `go:embed` with new static files: LOW
+
+The `//go:embed static/*` directive in `server.go` is already present and
+covers all files in `static/`. Adding `echarts.min.js` and `dashboard.js`
+requires no code change to the embed — they are picked up automatically.
+Deleting `htmx.min.js` requires removing the `TestStaticHtmx` test that
+asserts on its presence.
+
+### R5 — ECharts bundle size: LOW-MEDIUM
+
+A full ECharts bundle is ~1 MB. Tree-shaken to the 5 chart types needed
+(line, bar, scatter, heatmap, area) the spec estimates ~200 KB. This is
+vendored and embedded in the binary, increasing binary size by ~200 KB.
+Acceptable for a local dev dashboard tool. Binary size should be verified
+post-build.
+
+### R6 — `verify_results` schema migration on existing DBs: LOW
+
+The `migrate()` function uses `CREATE TABLE IF NOT EXISTS`, so the new table
+is added idempotently on first open of an existing DB. No data loss. Existing
+`verify_events` and `phase_events` rows are unaffected.
+
+### R7 — smart-skip path in cmd_verify.go: MEDIUM
+
+The smart-skip path today does zero DB interaction. Adding
+`tryOpenStore` + `InsertVerifyResult` on the skip path requires that the store
+open succeeds (which may fail in test or unusual environments). The same
+best-effort pattern already used for the failure path (`tryOpenStore` returns
+nil on error, inserts are skipped) applies here. The skip path must not fail
+if the store is unavailable.
+
+### R8 — server_test.go and fakeMetrics interface drift: LOW
+
+The `fakeMetrics` struct in `server_test.go` implements `MetricsReader`. When
+4 new query methods are added to the interface, the existing `fakeMetrics`
+will fail to compile. All test files in the package must be updated together.
+The hub's `hub_test.go` will use a separate mock. Straightforward but all
+tests must move atomically.
+
+### R9 — JS reconnect loop vs server shutdown: LOW
+
+On `sdd dashboard` exit (Ctrl-C), `ctx.Done()` fires, the HTTP server does a
+3-second graceful shutdown, and all WS connections are closed. The browser's
+exponential-backoff reconnect loop will then retry indefinitely. This is
+acceptable behavior for a dev tool — the user closed the server intentionally.
+
+### R10 — Tab resize event for ECharts: LOW
+
+ECharts requires explicit `chart.resize()` on container size change. The tab
+click handler must call `resize()` when showing a previously-hidden chart.
+Without this, ECharts renders at 0×0 on first view. This is a known ECharts
+initialization pattern and is accounted for in the design.
+
+## 6. Approach Comparison
+
+### Approach A: DB-poll hub (chosen)
+
+The hub runs a goroutine that queries SQLite every 1 second, diffs against
+last-known state, and pushes deltas over open WebSocket connections.
+
+**Pros:**
+- Works reliably across OS process boundaries (CLI vs dashboard server)
+- Incremental chart data via sequence-based `WHERE id > lastSeq` queries
+- Single transport (WS only), no mixed HTMX+WS complexity
+- ~1s update latency vs 3s today
+
+**Cons:**
+- Requires an always-running goroutine in the server process
+- Hub holds copies of last-known state (~KB, negligible)
+- New `verify_results` table required for verify chart data
+
+### Approach B: SSE (Server-Sent Events)
+
+Replace HTMX polling with SSE (`text/event-stream`). No new Go dependency,
+built into browsers natively.
+
+**Pros:**
+- No external WebSocket library
+- Simpler than WS for unidirectional push
+
+**Cons:**
+- Still need DB polling on the server side (same architectural requirement)
+- SSE does not support binary or bidirectional messages (no blocker here, but
+  less flexible)
+- ECharts integration is identical either way
+- Less standard for this pattern in Go ecosystem; `coder/websocket` is lighter
+  than a custom SSE writer
+
+### Approach C: Keep HTMX, add chart iframes or polling fetch
+
+Add charts via separate polling `fetch()` calls from JS, keep HTMX for
+KPI/pipeline/error fragments.
+
+**Pros:**
+- Minimal server changes
+- No new transport
+
+**Cons:**
+- Mixed transport (HTMX + fetch) increases mental complexity
+- 3s latency unchanged
+- 8+ polling intervals firing simultaneously (3 HTMX + 5 chart fetch)
+- Does not eliminate htmx.min.js
+- Charts would still need JS and ECharts — does not simplify the JS side
+
+## 7. Recommendation
+
+Implement Approach A (DB-poll hub) as specified in the design doc.
+
+**Rationale:** The DB-poll model is the correct architectural fit because the
+process-isolation constraint is real and fundamental — CLI commands cannot
+share a broker with the dashboard server. SQLite WAL concurrent readers are
+the designed solution. The implementation is straightforward: one new Go file
+(`hub.go`, ~250 LOC), moderate changes to existing files, and a clean deletion
+of the HTMX machinery.
+
+**Implementation order (bottom-up):**
+
+1. `store.go` — add `verify_results` table migration, `InsertVerifyResult`,
+   and 4 new query methods + row types. No dependencies on new code.
+2. `store_test.go` — extend with tests for all new store methods.
+3. `cmd_verify.go` — add `verify_results` writes on all 3 paths (smart-skip,
+   pass, fail). Depends on step 1.
+4. `hub.go` — new file. Hub struct, `Run` goroutine, `HandleWS`, broadcast,
+   diff logic, initial snapshot builder. Depends on step 1 (new query
+   methods).
+5. `hub_test.go` — new file. Tests for hub. Depends on step 4.
+6. `server.go` — add hub field, add `/ws` route, remove 3 fragment handlers,
+   extend `MetricsReader` interface with 4 new methods. Depends on steps 1, 4.
+7. `server_test.go` — remove fragment tests, add `/ws` upgrade test, update
+   `fakeMetrics` to satisfy new interface. Depends on step 6.
+8. `static/echarts.min.js` — vendor tree-shaken bundle.
+9. `static/dashboard.js` — WS client, DOM updaters, ECharts managers.
+10. `templates/base.html` — rewrite. Remove HTMX divs, add chart containers,
+    tab bar, load echarts + dashboard.js.
+11. Delete `templates/kpi.html`, `templates/pipelines.html`,
+    `templates/errors.html`, `static/htmx.min.js`.
+12. `cmd_dashboard.go` — start `hub.Run(ctx)` goroutine before
+    `ListenAndServe`.
+13. `go.mod` / `go.sum` — `go get github.com/coder/websocket`.
+
+Steps 1–3 are independently testable before the WS work begins. Steps 4–7
+form the Go WS layer. Steps 8–12 are the client layer. All steps culminate
+in `make check` (fmt + lint + test) as the final gate.
+
+**No scope creep:** `events/broker.go`, `state/`, `phase/`, `context/`,
+`artifacts/`, `config/`, and all non-dashboard CLI commands remain untouched.
+
