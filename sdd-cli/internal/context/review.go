@@ -46,6 +46,7 @@ func AssembleReview(w io.Writer, p *Params) error {
 
 	writeSection(w, "SPECIFICATIONS", []byte(specs))
 	writeSection(w, "DESIGN", design)
+	writeSectionStr(w, "COMPLETED TASKS", extractCompletedTasks(string(tasks)))
 	writeSection(w, "TASKS", tasks)
 	writeSectionStr(w, "GIT DIFF", diff)
 

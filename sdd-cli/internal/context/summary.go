@@ -24,13 +24,13 @@ func buildSummary(changeDir string, p *Params) string {
 	}
 
 	if data, err := os.ReadFile(filepath.Join(changeDir, "proposal.md")); err == nil {
-		if intent := extractFirst(string(data), "##", 3); intent != "" {
+		if intent := extractDecisions(string(data)); intent != "" {
 			sections = append(sections, "Proposal: "+intent)
 		}
 	}
 
 	if data, err := os.ReadFile(filepath.Join(changeDir, "design.md")); err == nil {
-		if decision := extractFirst(string(data), "##", 3); decision != "" {
+		if decision := extractDecisions(string(data)); decision != "" {
 			sections = append(sections, "Design: "+decision)
 		}
 	}
@@ -87,6 +87,73 @@ func extractFirst(content, keyword string, maxLines int) string {
 	}
 
 	return strings.Join(result, " ")
+}
+
+func isDecisionKey(s string) bool {
+	if len(s) == 0 || len(s) > 30 {
+		return false
+	}
+	if strings.ContainsAny(s, " \t") {
+		return false
+	}
+	if strings.HasPrefix(s, "http") || strings.HasPrefix(s, "-") {
+		return false
+	}
+	return true
+}
+
+func extractDecisions(content string) string {
+	lines := strings.Split(content, "\n")
+	var kvPairs []string
+	var headerLines []string
+	inFence := false
+	inDecisionSection := false
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+
+		if strings.HasPrefix(trimmed, "```") {
+			inFence = !inFence
+			continue
+		}
+		if inFence {
+			continue
+		}
+
+		if strings.HasPrefix(trimmed, "## ") {
+			header := strings.ToLower(strings.TrimPrefix(trimmed, "## "))
+			inDecisionSection = header == "decisions" || header == "architecture"
+			continue
+		}
+
+		if inDecisionSection && trimmed != "" {
+			headerLines = append(headerLines, trimmed)
+			if len(headerLines) >= 3 {
+				inDecisionSection = false
+			}
+			continue
+		}
+
+		if !inDecisionSection && strings.Contains(trimmed, ": ") {
+			parts := strings.SplitN(trimmed, ": ", 2)
+			key := strings.TrimSpace(parts[0])
+			value := strings.TrimSpace(parts[1])
+			if isDecisionKey(key) && value != "" {
+				kvPairs = append(kvPairs, key+": "+value)
+				if len(kvPairs) >= 5 {
+					break
+				}
+			}
+		}
+	}
+
+	if len(kvPairs) > 0 {
+		return strings.Join(kvPairs, "; ")
+	}
+	if len(headerLines) > 0 {
+		return strings.Join(headerLines, " ")
+	}
+	return extractFirst(content, "##", 3)
 }
 
 // projectContext returns a compact project overview string with stack info.

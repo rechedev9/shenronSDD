@@ -37,6 +37,7 @@ func AssembleClean(w io.Writer, p *Params) error {
 	}
 
 	writeSection(w, "VERIFY REPORT", verifyReport)
+	writeSectionStr(w, "COMPLETED TASKS", extractCompletedTasks(string(tasks)))
 	writeSection(w, "TASKS", tasks)
 
 	// Design and specs — clean needs to know what was intended to justify removals.
