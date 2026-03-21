@@ -7,6 +7,7 @@ import (
 )
 
 func TestBroker_SubscribeAndEmit(t *testing.T) {
+	t.Parallel()
 	b := NewBroker()
 	var called int
 	b.Subscribe(PhaseAssembled, func(e Event) {
@@ -19,6 +20,7 @@ func TestBroker_SubscribeAndEmit(t *testing.T) {
 }
 
 func TestBroker_MultipleSubscribers(t *testing.T) {
+	t.Parallel()
 	b := NewBroker()
 	var count atomic.Int32
 	b.Subscribe(CacheHit, func(e Event) { count.Add(1) })
@@ -30,6 +32,7 @@ func TestBroker_MultipleSubscribers(t *testing.T) {
 }
 
 func TestBroker_NonMatchingType(t *testing.T) {
+	t.Parallel()
 	b := NewBroker()
 	var called bool
 	b.Subscribe(CacheHit, func(e Event) { called = true })
@@ -40,12 +43,14 @@ func TestBroker_NonMatchingType(t *testing.T) {
 }
 
 func TestBroker_EmitNoSubscribers(t *testing.T) {
+	t.Parallel()
 	b := NewBroker()
 	// Should not panic.
 	b.Emit(Event{Type: PhaseAssembled})
 }
 
 func TestBroker_SubscriberPanicRecovery(t *testing.T) {
+	t.Parallel()
 	b := NewBroker()
 
 	var order []int
@@ -61,6 +66,7 @@ func TestBroker_SubscriberPanicRecovery(t *testing.T) {
 }
 
 func TestBroker_ConcurrentEmit(t *testing.T) {
+	t.Parallel()
 	b := NewBroker()
 	var count atomic.Int64
 	b.Subscribe(PhaseAssembled, func(e Event) {
@@ -83,6 +89,7 @@ func TestBroker_ConcurrentEmit(t *testing.T) {
 }
 
 func TestBroker_NilSafe(t *testing.T) {
+	t.Parallel()
 	var b *Broker
 	// Should not panic.
 	b.Subscribe(PhaseAssembled, func(e Event) {})
@@ -90,6 +97,7 @@ func TestBroker_NilSafe(t *testing.T) {
 }
 
 func TestBroker_Payload(t *testing.T) {
+	t.Parallel()
 	b := NewBroker()
 
 	var got PhaseAssembledPayload
@@ -116,6 +124,7 @@ func TestBroker_Payload(t *testing.T) {
 }
 
 func TestBroker_AllEventTypes(t *testing.T) {
+	t.Parallel()
 	b := NewBroker()
 	types := []EventType{PhaseAssembled, CacheHit, CacheMiss, ArtifactPromoted, StateAdvanced, VerifyFailed}
 

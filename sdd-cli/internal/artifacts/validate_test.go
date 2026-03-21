@@ -8,6 +8,7 @@ import (
 )
 
 func TestValidate(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		phase   state.Phase
@@ -65,7 +66,9 @@ func TestValidate(t *testing.T) {
 	}
 
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			err := Validate(tt.phase, []byte(tt.content))
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Validate(%s) error = %v, wantErr %v", tt.phase, err, tt.wantErr)
@@ -78,6 +81,7 @@ func TestValidate(t *testing.T) {
 }
 
 func TestValidateUnknownPhase(t *testing.T) {
+	t.Parallel()
 	err := Validate("nonexistent", []byte("anything"))
 	if err != nil {
 		t.Errorf("unknown phase should return nil, got: %v", err)

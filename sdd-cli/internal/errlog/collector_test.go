@@ -7,6 +7,7 @@ import (
 )
 
 func TestFingerprint_Deterministic(t *testing.T) {
+	t.Parallel()
 	a := Fingerprint("go test ./...", []string{"FAIL main_test.go:12"})
 	b := Fingerprint("go test ./...", []string{"FAIL main_test.go:12"})
 	if a != b {
@@ -18,6 +19,7 @@ func TestFingerprint_Deterministic(t *testing.T) {
 }
 
 func TestFingerprint_DifferentCommands(t *testing.T) {
+	t.Parallel()
 	a := Fingerprint("go test ./...", []string{"FAIL"})
 	b := Fingerprint("golangci-lint run", []string{"FAIL"})
 	if a == b {
@@ -26,6 +28,7 @@ func TestFingerprint_DifferentCommands(t *testing.T) {
 }
 
 func TestFingerprint_EmptyErrorLines(t *testing.T) {
+	t.Parallel()
 	fp := Fingerprint("go build ./...", nil)
 	if fp == "" {
 		t.Error("fingerprint is empty for nil error lines")
@@ -33,6 +36,7 @@ func TestFingerprint_EmptyErrorLines(t *testing.T) {
 }
 
 func TestRecord_Roundtrip(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	// Create openspec/.cache directory structure.
 	os.MkdirAll(filepath.Join(dir, "openspec", ".cache"), 0o755)
@@ -58,6 +62,7 @@ func TestRecord_Roundtrip(t *testing.T) {
 }
 
 func TestRecord_EvictsOldest(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	os.MkdirAll(filepath.Join(dir, "openspec", ".cache"), 0o755)
 
@@ -79,6 +84,7 @@ func TestRecord_EvictsOldest(t *testing.T) {
 }
 
 func TestLoad_MissingFile(t *testing.T) {
+	t.Parallel()
 	log := Load(t.TempDir())
 	if log == nil {
 		t.Fatal("Load returned nil for missing file")
@@ -92,6 +98,7 @@ func TestLoad_MissingFile(t *testing.T) {
 }
 
 func TestLoad_CorruptJSON(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := LogPath(dir)
 	os.MkdirAll(filepath.Dir(path), 0o755)
@@ -104,6 +111,7 @@ func TestLoad_CorruptJSON(t *testing.T) {
 }
 
 func TestRecurringFingerprints(t *testing.T) {
+	t.Parallel()
 	log := &ErrorLog{
 		Version: logVersion,
 		Entries: []ErrorEntry{

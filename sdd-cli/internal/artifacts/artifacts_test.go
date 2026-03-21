@@ -10,6 +10,7 @@ import (
 )
 
 func TestWritePending(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	content := []byte("# Exploration\n\nFindings here.\n")
 
@@ -29,6 +30,7 @@ func TestWritePending(t *testing.T) {
 }
 
 func TestPendingExists(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 
 	if PendingExists(dir, state.PhaseExplore) {
@@ -43,6 +45,7 @@ func TestPendingExists(t *testing.T) {
 }
 
 func TestPromote(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	content := []byte("# Exploration\n\n## Current State\nLogin page exists.\n\n## Relevant Files\n- login.go\n")
 
@@ -74,6 +77,7 @@ func TestPromote(t *testing.T) {
 }
 
 func TestPromoteSpec(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	content := []byte("# Auth Spec\n\n## Requirements\n- OAuth login\n")
 
@@ -99,6 +103,7 @@ func TestPromoteSpec(t *testing.T) {
 }
 
 func TestPromoteNoPending(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 
 	_, err := Promote(dir, state.PhaseExplore, false)
@@ -111,6 +116,7 @@ func TestPromoteNoPending(t *testing.T) {
 }
 
 func TestRead(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	content := []byte("# Exploration\n")
 	os.WriteFile(filepath.Join(dir, "exploration.md"), content, 0o644)
@@ -125,6 +131,7 @@ func TestRead(t *testing.T) {
 }
 
 func TestReadMissing(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 
 	_, err := Read(dir, state.PhaseExplore)
@@ -134,6 +141,7 @@ func TestReadMissing(t *testing.T) {
 }
 
 func TestReadFile(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	content := []byte("custom content")
 	os.WriteFile(filepath.Join(dir, "custom.md"), content, 0o644)
@@ -148,6 +156,7 @@ func TestReadFile(t *testing.T) {
 }
 
 func TestList(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 
 	// Create some artifacts.
@@ -179,6 +188,7 @@ func TestList(t *testing.T) {
 }
 
 func TestListWithSpecs(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	specsDir := filepath.Join(dir, "specs")
 	os.MkdirAll(specsDir, 0o755)
@@ -200,6 +210,7 @@ func TestListWithSpecs(t *testing.T) {
 }
 
 func TestListEmpty(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 
 	items, err := List(dir)
@@ -212,6 +223,7 @@ func TestListEmpty(t *testing.T) {
 }
 
 func TestListPending(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	WritePending(dir, state.PhaseExplore, []byte("explore"))
 	WritePending(dir, state.PhasePropose, []byte("propose"))
@@ -226,6 +238,7 @@ func TestListPending(t *testing.T) {
 }
 
 func TestListPendingEmpty(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 
 	items, err := ListPending(dir)
@@ -238,6 +251,7 @@ func TestListPendingEmpty(t *testing.T) {
 }
 
 func TestPendingFileName(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		phase state.Phase
 		want  string
@@ -249,7 +263,9 @@ func TestPendingFileName(t *testing.T) {
 		{state.PhaseTasks, "tasks.md"},
 	}
 	for _, tt := range tests {
+		tt := tt
 		t.Run(string(tt.phase), func(t *testing.T) {
+			t.Parallel()
 			got := PendingFileName(tt.phase)
 			if got != tt.want {
 				t.Errorf("PendingFileName(%s) = %q, want %q", tt.phase, got, tt.want)
@@ -259,6 +275,7 @@ func TestPendingFileName(t *testing.T) {
 }
 
 func TestPromoteValidationReject(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	// Explore artifact missing required sections.
 	WritePending(dir, state.PhaseExplore, []byte("# Exploration\n\nno required sections"))
@@ -277,6 +294,7 @@ func TestPromoteValidationReject(t *testing.T) {
 }
 
 func TestPromoteForceBypass(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	// Explore artifact missing required sections — but force=true.
 	WritePending(dir, state.PhaseExplore, []byte("# Exploration\n\nno required sections"))
@@ -291,6 +309,7 @@ func TestPromoteForceBypass(t *testing.T) {
 }
 
 func TestPromoteAllPhases(t *testing.T) {
+	t.Parallel()
 	// Verify every phase with an artifact mapping can be promoted.
 	phases := []state.Phase{
 		state.PhaseExplore, state.PhasePropose, state.PhaseDesign,
@@ -298,7 +317,9 @@ func TestPromoteAllPhases(t *testing.T) {
 		state.PhaseClean, state.PhaseArchive,
 	}
 	for _, phase := range phases {
+		phase := phase
 		t.Run(string(phase), func(t *testing.T) {
+			t.Parallel()
 			dir := t.TempDir()
 			WritePending(dir, phase, []byte("content for "+string(phase)))
 

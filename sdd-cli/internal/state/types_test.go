@@ -3,6 +3,7 @@ package state
 import "testing"
 
 func TestNewState(t *testing.T) {
+	t.Parallel()
 	s := NewState("add-auth", "Add authentication module")
 
 	if s.Name != "add-auth" {
@@ -35,6 +36,7 @@ func TestNewState(t *testing.T) {
 }
 
 func TestAllPhasesOrder(t *testing.T) {
+	t.Parallel()
 	phases := AllPhases()
 	expected := []Phase{
 		PhaseExplore, PhasePropose, PhaseSpec, PhaseDesign,

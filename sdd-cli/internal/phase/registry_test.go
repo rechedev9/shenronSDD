@@ -8,6 +8,7 @@ import (
 )
 
 func TestBuiltinPhaseCount(t *testing.T) {
+	t.Parallel()
 	all := phase.DefaultRegistry.All()
 	if len(all) != 10 {
 		t.Fatalf("expected 10 built-in phases, got %d", len(all))
@@ -15,6 +16,7 @@ func TestBuiltinPhaseCount(t *testing.T) {
 }
 
 func TestBuiltinPhaseNamesUnique(t *testing.T) {
+	t.Parallel()
 	seen := map[string]bool{}
 	for _, p := range phase.DefaultRegistry.All() {
 		if seen[p.Name] {
@@ -25,6 +27,7 @@ func TestBuiltinPhaseNamesUnique(t *testing.T) {
 }
 
 func TestPrerequisiteGraphAcyclic(t *testing.T) {
+	t.Parallel()
 	all := phase.DefaultRegistry.All()
 	byName := map[string]phase.Phase{}
 	for _, p := range all {
@@ -66,6 +69,7 @@ func TestPrerequisiteGraphAcyclic(t *testing.T) {
 }
 
 func TestAllPhasesOrder(t *testing.T) {
+	t.Parallel()
 	expected := []string{
 		"explore", "propose", "spec", "design", "tasks",
 		"apply", "review", "verify", "clean", "archive",
@@ -82,6 +86,7 @@ func TestAllPhasesOrder(t *testing.T) {
 }
 
 func TestVerifyAndArchiveHaveNilAssemble(t *testing.T) {
+	t.Parallel()
 	// Before context.init() wires assemblers, all Assemble fields are nil.
 	// verify and archive should remain nil even after wiring (they have
 	// no assembler). This test runs in the phase package — context.init()
@@ -98,6 +103,7 @@ func TestVerifyAndArchiveHaveNilAssemble(t *testing.T) {
 }
 
 func TestApplyHasRecoverSkip(t *testing.T) {
+	t.Parallel()
 	p, ok := phase.DefaultRegistry.Get("apply")
 	if !ok {
 		t.Fatal("apply phase not found")
@@ -108,6 +114,7 @@ func TestApplyHasRecoverSkip(t *testing.T) {
 }
 
 func TestCustomPhaseRegistration(t *testing.T) {
+	t.Parallel()
 	r := &phase.Registry{}
 	r.Register(phase.Phase{
 		Name:          "custom-phase",
@@ -129,6 +136,7 @@ func TestCustomPhaseRegistration(t *testing.T) {
 }
 
 func TestDuplicateRegistrationPanics(t *testing.T) {
+	t.Parallel()
 	r := &phase.Registry{}
 	r.Register(phase.Phase{Name: "dup"})
 	defer func() {
@@ -140,6 +148,7 @@ func TestDuplicateRegistrationPanics(t *testing.T) {
 }
 
 func TestEmptyNamePanics(t *testing.T) {
+	t.Parallel()
 	r := &phase.Registry{}
 	defer func() {
 		if r := recover(); r == nil {
@@ -150,6 +159,7 @@ func TestEmptyNamePanics(t *testing.T) {
 }
 
 func TestSealedRegistryPanicsOnRegister(t *testing.T) {
+	t.Parallel()
 	r := &phase.Registry{}
 	r.Register(phase.Phase{Name: "seal-test"})
 	r.Get("seal-test") // seals

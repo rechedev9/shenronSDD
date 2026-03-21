@@ -8,6 +8,7 @@ import (
 )
 
 func TestUsageError(t *testing.T) {
+	t.Parallel()
 	err := Usage("bad input")
 	if err == nil {
 		t.Fatal("expected non-nil error")
@@ -21,6 +22,7 @@ func TestUsageError(t *testing.T) {
 }
 
 func TestIsUsageNonUsage(t *testing.T) {
+	t.Parallel()
 	err := WriteJSON(new(bytes.Buffer), "test", "msg")
 	if IsUsage(err) {
 		t.Error("expected IsUsage to return false for non-usage error")
@@ -28,6 +30,7 @@ func TestIsUsageNonUsage(t *testing.T) {
 }
 
 func TestWriteJSON(t *testing.T) {
+	t.Parallel()
 	var buf bytes.Buffer
 	err := WriteJSON(&buf, "init", "not implemented")
 	if err == nil {
@@ -47,6 +50,7 @@ func TestWriteJSON(t *testing.T) {
 }
 
 func TestTransportError(t *testing.T) {
+	t.Parallel()
 	err := Transport("connection refused")
 	if err == nil {
 		t.Fatal("expected non-nil error")
@@ -60,6 +64,7 @@ func TestTransportError(t *testing.T) {
 }
 
 func TestIsTransportNonTransport(t *testing.T) {
+	t.Parallel()
 	err := Usage("bad input")
 	if IsTransport(err) {
 		t.Error("expected IsTransport to return false for usage error")
@@ -67,6 +72,7 @@ func TestIsTransportNonTransport(t *testing.T) {
 }
 
 func TestWriteError(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		err      error
@@ -77,7 +83,9 @@ func TestWriteError(t *testing.T) {
 		{"internal error", WriteJSON(new(bytes.Buffer), "x", "fail"), "internal"},
 	}
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			var buf bytes.Buffer
 			_ = WriteError(&buf, "test", tt.err)
 

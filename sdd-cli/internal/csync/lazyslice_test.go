@@ -10,6 +10,7 @@ import (
 )
 
 func TestNewLazySlice_NilLoaders(t *testing.T) {
+	t.Parallel()
 	ls := NewLazySlice[int](nil)
 	if ls.Len() != 0 {
 		t.Errorf("Len() = %d, want 0", ls.Len())
@@ -20,6 +21,7 @@ func TestNewLazySlice_NilLoaders(t *testing.T) {
 }
 
 func TestNewLazySlice_EmptyLoaders(t *testing.T) {
+	t.Parallel()
 	ls := NewLazySlice[int]([]func() (int, error){})
 	if ls.Len() != 0 {
 		t.Errorf("Len() = %d, want 0", ls.Len())
@@ -27,6 +29,7 @@ func TestNewLazySlice_EmptyLoaders(t *testing.T) {
 }
 
 func TestNewLazySlice_Len(t *testing.T) {
+	t.Parallel()
 	loaders := []func() (string, error){
 		func() (string, error) { return "a", nil },
 		func() (string, error) { return "b", nil },
@@ -39,6 +42,7 @@ func TestNewLazySlice_Len(t *testing.T) {
 }
 
 func TestLoadAll_Results(t *testing.T) {
+	t.Parallel()
 	loaders := []func() (string, error){
 		func() (string, error) { return "alpha", nil },
 		func() (string, error) { return "beta", nil },
@@ -62,6 +66,7 @@ func TestLoadAll_Results(t *testing.T) {
 }
 
 func TestLoadAll_Idempotent(t *testing.T) {
+	t.Parallel()
 	var count atomic.Int32
 	loaders := []func() (int, error){
 		func() (int, error) { count.Add(1); return 1, nil },
@@ -75,6 +80,7 @@ func TestLoadAll_Idempotent(t *testing.T) {
 }
 
 func TestLoadAll_PartialFailure(t *testing.T) {
+	t.Parallel()
 	loaders := []func() (string, error){
 		func() (string, error) { return "ok-0", nil },
 		func() (string, error) { return "", fmt.Errorf("fail-1") },
@@ -112,6 +118,7 @@ func TestLoadAll_PartialFailure(t *testing.T) {
 }
 
 func TestLoadAll_PanicRecovery(t *testing.T) {
+	t.Parallel()
 	loaders := []func() (string, error){
 		func() (string, error) { return "ok", nil },
 		func() (string, error) { panic("boom") },
@@ -141,6 +148,7 @@ func TestLoadAll_PanicRecovery(t *testing.T) {
 }
 
 func TestLoadAll_GoroutineBound(t *testing.T) {
+	t.Parallel()
 	var peak atomic.Int32
 	var active atomic.Int32
 
@@ -172,6 +180,7 @@ func TestLoadAll_GoroutineBound(t *testing.T) {
 }
 
 func TestLoadAll_NoGoroutineLeak(t *testing.T) {
+	t.Parallel()
 	before := runtime.NumGoroutine()
 
 	loaders := []func() (int, error){
@@ -194,6 +203,7 @@ func TestLoadAll_NoGoroutineLeak(t *testing.T) {
 }
 
 func TestMustGet_Success(t *testing.T) {
+	t.Parallel()
 	ls := NewLazySlice([]func() (string, error){
 		func() (string, error) { return "hello", nil },
 	})
@@ -206,6 +216,7 @@ func TestMustGet_Success(t *testing.T) {
 }
 
 func TestMustGet_Panics(t *testing.T) {
+	t.Parallel()
 	ls := NewLazySlice([]func() (string, error){
 		func() (string, error) { return "", fmt.Errorf("bad") },
 	})
@@ -225,6 +236,7 @@ func TestMustGet_Panics(t *testing.T) {
 }
 
 func TestMaxWorkers(t *testing.T) {
+	t.Parallel()
 	w := maxWorkers()
 	if w < 1 || w > 8 {
 		t.Errorf("maxWorkers() = %d, want [1, 8]", w)

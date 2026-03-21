@@ -8,6 +8,7 @@ import (
 )
 
 func TestDetectGo(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module test\n\ngo 1.22\n"), 0o644)
 
@@ -30,6 +31,7 @@ func TestDetectGo(t *testing.T) {
 }
 
 func TestDetectNode(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	os.WriteFile(filepath.Join(dir, "package.json"), []byte(`{"name":"test"}`), 0o644)
 
@@ -46,6 +48,7 @@ func TestDetectNode(t *testing.T) {
 }
 
 func TestDetectPython(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	os.WriteFile(filepath.Join(dir, "pyproject.toml"), []byte("[project]\nname = \"test\"\n"), 0o644)
 
@@ -65,6 +68,7 @@ func TestDetectPython(t *testing.T) {
 }
 
 func TestDetectRust(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	os.WriteFile(filepath.Join(dir, "Cargo.toml"), []byte("[package]\nname = \"test\"\n"), 0o644)
 
@@ -81,6 +85,7 @@ func TestDetectRust(t *testing.T) {
 }
 
 func TestDetectJavaGradle(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	os.WriteFile(filepath.Join(dir, "build.gradle"), []byte(""), 0o644)
 
@@ -97,6 +102,7 @@ func TestDetectJavaGradle(t *testing.T) {
 }
 
 func TestDetectJavaMaven(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	os.WriteFile(filepath.Join(dir, "pom.xml"), []byte("<project/>"), 0o644)
 
@@ -113,6 +119,7 @@ func TestDetectJavaMaven(t *testing.T) {
 }
 
 func TestDetectNoManifest(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 
 	_, err := Detect(dir)
@@ -125,6 +132,7 @@ func TestDetectNoManifest(t *testing.T) {
 }
 
 func TestDetectMonorepo(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	// Go + Node in same directory — Go wins (first in scan order).
 	os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module test\n"), 0o644)
@@ -143,6 +151,7 @@ func TestDetectMonorepo(t *testing.T) {
 }
 
 func TestDetectProjectName(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module test\n"), 0o644)
 
@@ -157,6 +166,7 @@ func TestDetectProjectName(t *testing.T) {
 }
 
 func TestDetectSkillsPath(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module test\n"), 0o644)
 
@@ -170,6 +180,7 @@ func TestDetectSkillsPath(t *testing.T) {
 }
 
 func TestSaveLoad(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
 
@@ -208,6 +219,7 @@ func TestSaveLoad(t *testing.T) {
 }
 
 func TestSaveAtomicNoTmpLeftover(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
 
@@ -223,6 +235,7 @@ func TestSaveAtomicNoTmpLeftover(t *testing.T) {
 }
 
 func TestLoadMissing(t *testing.T) {
+	t.Parallel()
 	_, err := Load("/nonexistent/config.yaml")
 	if err == nil {
 		t.Fatal("expected error loading missing file")
@@ -230,6 +243,7 @@ func TestLoadMissing(t *testing.T) {
 }
 
 func TestLoadInvalidYAML(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
 	os.WriteFile(path, []byte(":\n  :\n    - :\n  invalid: [unclosed"), 0o644)

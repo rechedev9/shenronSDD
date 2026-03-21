@@ -51,6 +51,7 @@ func setupFixture(t *testing.T) (string, string, *Params) {
 }
 
 func TestAssembleExplore(t *testing.T) {
+	t.Parallel()
 	_, _, p := setupFixture(t)
 
 	var buf bytes.Buffer
@@ -81,6 +82,7 @@ func TestAssembleExplore(t *testing.T) {
 }
 
 func TestAssemblePropose(t *testing.T) {
+	t.Parallel()
 	changeDir, _, p := setupFixture(t)
 
 	// Create exploration artifact.
@@ -105,6 +107,7 @@ func TestAssemblePropose(t *testing.T) {
 }
 
 func TestAssembleProposeNoExploration(t *testing.T) {
+	t.Parallel()
 	_, _, p := setupFixture(t)
 
 	var buf bytes.Buffer
@@ -115,6 +118,7 @@ func TestAssembleProposeNoExploration(t *testing.T) {
 }
 
 func TestAssembleSpec(t *testing.T) {
+	t.Parallel()
 	changeDir, _, p := setupFixture(t)
 
 	os.WriteFile(filepath.Join(changeDir, "proposal.md"), []byte("# Proposal\n\nWe should add auth.\n"), 0o644)
@@ -138,6 +142,7 @@ func TestAssembleSpec(t *testing.T) {
 }
 
 func TestAssembleSpecNoProposal(t *testing.T) {
+	t.Parallel()
 	_, _, p := setupFixture(t)
 
 	var buf bytes.Buffer
@@ -148,6 +153,7 @@ func TestAssembleSpecNoProposal(t *testing.T) {
 }
 
 func TestAssembleDesign(t *testing.T) {
+	t.Parallel()
 	changeDir, _, p := setupFixture(t)
 
 	os.WriteFile(filepath.Join(changeDir, "proposal.md"), []byte("# Proposal\n"), 0o644)
@@ -177,6 +183,7 @@ func TestAssembleDesign(t *testing.T) {
 }
 
 func TestAssembleDesignNoSpecs(t *testing.T) {
+	t.Parallel()
 	changeDir, _, p := setupFixture(t)
 
 	os.WriteFile(filepath.Join(changeDir, "proposal.md"), []byte("# Proposal\n"), 0o644)
@@ -189,6 +196,7 @@ func TestAssembleDesignNoSpecs(t *testing.T) {
 }
 
 func TestAssembleTasks(t *testing.T) {
+	t.Parallel()
 	changeDir, _, p := setupFixture(t)
 
 	os.WriteFile(filepath.Join(changeDir, "design.md"), []byte("# Design\n\nUse middleware pattern.\n"), 0o644)
@@ -218,6 +226,7 @@ func TestAssembleTasks(t *testing.T) {
 }
 
 func TestAssembleTasksNoDesign(t *testing.T) {
+	t.Parallel()
 	changeDir, _, p := setupFixture(t)
 
 	specsDir := filepath.Join(changeDir, "specs")
@@ -232,6 +241,7 @@ func TestAssembleTasksNoDesign(t *testing.T) {
 }
 
 func TestAssembleDispatcher(t *testing.T) {
+	t.Parallel()
 	changeDir, _, p := setupFixture(t)
 
 	// Set up enough artifacts for a propose assembler.
@@ -248,6 +258,7 @@ func TestAssembleDispatcher(t *testing.T) {
 }
 
 func TestAssembleUnknownPhase(t *testing.T) {
+	t.Parallel()
 	_, _, p := setupFixture(t)
 
 	var buf bytes.Buffer
@@ -258,6 +269,7 @@ func TestAssembleUnknownPhase(t *testing.T) {
 }
 
 func TestAssembleMissingSkill(t *testing.T) {
+	t.Parallel()
 	changeDir, _, p := setupFixture(t)
 	p.SkillsPath = "/nonexistent/skills"
 
@@ -273,6 +285,7 @@ func TestAssembleMissingSkill(t *testing.T) {
 // --- Phase 6: Apply ---
 
 func TestAssembleApply(t *testing.T) {
+	t.Parallel()
 	changeDir, _, p := setupFixture(t)
 
 	os.WriteFile(filepath.Join(changeDir, "tasks.md"), []byte(`# Tasks
@@ -317,6 +330,7 @@ func TestAssembleApply(t *testing.T) {
 }
 
 func TestAssembleApplyNoTasks(t *testing.T) {
+	t.Parallel()
 	changeDir, _, p := setupFixture(t)
 
 	os.WriteFile(filepath.Join(changeDir, "design.md"), []byte("# Design\n"), 0o644)
@@ -332,6 +346,7 @@ func TestAssembleApplyNoTasks(t *testing.T) {
 }
 
 func TestExtractCurrentTask(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		input   string
@@ -375,7 +390,9 @@ func TestExtractCurrentTask(t *testing.T) {
 		},
 	}
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got := extractCurrentTask(tt.input)
 			if !strings.Contains(got, tt.want) {
 				t.Errorf("output missing %q\ngot: %s", tt.want, got)
@@ -390,6 +407,7 @@ func TestExtractCurrentTask(t *testing.T) {
 // --- Phase 6: Review ---
 
 func TestAssembleReview(t *testing.T) {
+	t.Parallel()
 	changeDir, _, p := setupFixture(t)
 
 	specsDir := filepath.Join(changeDir, "specs")
@@ -423,6 +441,7 @@ func TestAssembleReview(t *testing.T) {
 }
 
 func TestAssembleReviewNoDesign(t *testing.T) {
+	t.Parallel()
 	changeDir, _, p := setupFixture(t)
 
 	specsDir := filepath.Join(changeDir, "specs")
@@ -438,6 +457,7 @@ func TestAssembleReviewNoDesign(t *testing.T) {
 }
 
 func TestAssembleReviewWithProjectRules(t *testing.T) {
+	t.Parallel()
 	changeDir, _, p := setupFixture(t)
 
 	specsDir := filepath.Join(changeDir, "specs")
@@ -467,6 +487,7 @@ func TestAssembleReviewWithProjectRules(t *testing.T) {
 // --- Phase 6: Clean ---
 
 func TestAssembleClean(t *testing.T) {
+	t.Parallel()
 	changeDir, _, p := setupFixture(t)
 
 	os.WriteFile(filepath.Join(changeDir, "verify-report.md"), []byte("# Verify Report\nVerdict: PASS\n"), 0o644)
@@ -494,6 +515,7 @@ func TestAssembleClean(t *testing.T) {
 }
 
 func TestAssembleCleanNoVerifyReport(t *testing.T) {
+	t.Parallel()
 	changeDir, _, p := setupFixture(t)
 
 	os.WriteFile(filepath.Join(changeDir, "tasks.md"), []byte("# Tasks\n"), 0o644)
@@ -506,6 +528,7 @@ func TestAssembleCleanNoVerifyReport(t *testing.T) {
 }
 
 func TestAssembleCleanNoTasks(t *testing.T) {
+	t.Parallel()
 	changeDir, _, p := setupFixture(t)
 
 	os.WriteFile(filepath.Join(changeDir, "verify-report.md"), []byte("# Report\n"), 0o644)
@@ -518,6 +541,7 @@ func TestAssembleCleanNoTasks(t *testing.T) {
 }
 
 func TestLoadSpecsMultipleFiles(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	specsDir := filepath.Join(dir, "specs")
 	os.MkdirAll(specsDir, 0o755)

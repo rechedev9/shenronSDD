@@ -9,6 +9,7 @@ import (
 )
 
 func TestValidTransitions(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name   string
 		setup  func(*State) // complete prerequisite phases
@@ -47,7 +48,9 @@ func TestValidTransitions(t *testing.T) {
 		}, PhaseArchive},
 	}
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			s := NewState("test", "test")
 			if tt.setup != nil {
 				tt.setup(s)
@@ -60,6 +63,7 @@ func TestValidTransitions(t *testing.T) {
 }
 
 func TestInvalidTransitions(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		setup   func(*State)
@@ -88,7 +92,9 @@ func TestInvalidTransitions(t *testing.T) {
 		}, PhaseExplore, ErrAlreadyCompleted},
 	}
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			s := NewState("test", "test")
 			if tt.setup != nil {
 				tt.setup(s)
@@ -105,6 +111,7 @@ func TestInvalidTransitions(t *testing.T) {
 }
 
 func TestAdvance(t *testing.T) {
+	t.Parallel()
 	s := NewState("feat", "desc")
 
 	// Walk the full pipeline.
@@ -127,6 +134,7 @@ func TestAdvance(t *testing.T) {
 }
 
 func TestAdvanceParallelSpecDesign(t *testing.T) {
+	t.Parallel()
 	s := NewState("feat", "desc")
 	s.Phases[PhaseExplore] = StatusCompleted
 	s.Phases[PhasePropose] = StatusCompleted
@@ -146,6 +154,7 @@ func TestAdvanceParallelSpecDesign(t *testing.T) {
 }
 
 func TestAdvanceInvalid(t *testing.T) {
+	t.Parallel()
 	s := NewState("feat", "desc")
 	err := s.Advance(PhaseApply)
 	if err == nil {
@@ -158,6 +167,7 @@ func TestAdvanceInvalid(t *testing.T) {
 }
 
 func TestSaveLoad(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "state.json")
 
@@ -186,6 +196,7 @@ func TestSaveLoad(t *testing.T) {
 }
 
 func TestSaveAtomic(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "state.json")
 
@@ -212,6 +223,7 @@ func TestSaveAtomic(t *testing.T) {
 }
 
 func TestSaveCreatesDirectory(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "nested", "deep", "state.json")
 
@@ -225,6 +237,7 @@ func TestSaveCreatesDirectory(t *testing.T) {
 }
 
 func TestLoadMissing(t *testing.T) {
+	t.Parallel()
 	_, err := Load("/nonexistent/path/state.json")
 	if err == nil {
 		t.Fatal("expected error loading missing file")
@@ -232,6 +245,7 @@ func TestLoadMissing(t *testing.T) {
 }
 
 func TestLoadCorruptJSON(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "state.json")
 
@@ -249,6 +263,7 @@ func TestLoadCorruptJSON(t *testing.T) {
 }
 
 func TestLoadMissingName(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "state.json")
 
@@ -269,6 +284,7 @@ func TestLoadMissingName(t *testing.T) {
 }
 
 func TestLoadMissingPhase(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "state.json")
 
@@ -289,6 +305,7 @@ func TestLoadMissingPhase(t *testing.T) {
 }
 
 func TestRecoverFromArtifacts(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 
 	// Create some artifact files.
@@ -321,6 +338,7 @@ func TestRecoverFromArtifacts(t *testing.T) {
 }
 
 func TestRecoverEmptyDir(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	s := Recover("feat", "desc", dir)
 
@@ -335,6 +353,7 @@ func TestRecoverEmptyDir(t *testing.T) {
 }
 
 func TestRecoverEmptySpecsDir(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	os.MkdirAll(filepath.Join(dir, "specs"), 0o755) // empty specs dir
 
@@ -345,6 +364,7 @@ func TestRecoverEmptySpecsDir(t *testing.T) {
 }
 
 func TestIsComplete(t *testing.T) {
+	t.Parallel()
 	s := NewState("test", "test")
 	if s.IsComplete() {
 		t.Error("fresh state should not be complete")
@@ -359,6 +379,7 @@ func TestIsComplete(t *testing.T) {
 }
 
 func TestIsCompleteWithSkipped(t *testing.T) {
+	t.Parallel()
 	s := NewState("test", "test")
 	for _, p := range AllPhases() {
 		s.Phases[p] = StatusCompleted

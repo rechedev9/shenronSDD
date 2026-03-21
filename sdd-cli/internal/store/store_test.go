@@ -20,6 +20,7 @@ func newTestStore(t *testing.T) *Store {
 }
 
 func TestOpen_CreatesSchema(t *testing.T) {
+	t.Parallel()
 	s := newTestStore(t)
 	ctx := context.Background()
 
@@ -52,6 +53,7 @@ func TestOpen_CreatesSchema(t *testing.T) {
 }
 
 func TestOpen_WALMode(t *testing.T) {
+	t.Parallel()
 	s := newTestStore(t)
 	ctx := context.Background()
 
@@ -65,6 +67,7 @@ func TestOpen_WALMode(t *testing.T) {
 }
 
 func TestInsertPhaseEvent_Roundtrip(t *testing.T) {
+	t.Parallel()
 	s := newTestStore(t)
 	ctx := context.Background()
 
@@ -93,6 +96,7 @@ func TestInsertPhaseEvent_Roundtrip(t *testing.T) {
 }
 
 func TestTokenSummary_Empty(t *testing.T) {
+	t.Parallel()
 	s := newTestStore(t)
 	ctx := context.Background()
 
@@ -112,6 +116,7 @@ func TestTokenSummary_Empty(t *testing.T) {
 }
 
 func TestPhaseTokensByChange(t *testing.T) {
+	t.Parallel()
 	s := newTestStore(t)
 	ctx := context.Background()
 
@@ -144,6 +149,7 @@ func TestPhaseTokensByChange(t *testing.T) {
 }
 
 func TestInsertVerifyEvent_Roundtrip(t *testing.T) {
+	t.Parallel()
 	s := newTestStore(t)
 	ctx := context.Background()
 
@@ -188,6 +194,7 @@ func TestInsertVerifyEvent_Roundtrip(t *testing.T) {
 }
 
 func TestRecentErrors_Empty(t *testing.T) {
+	t.Parallel()
 	s := newTestStore(t)
 	ctx := context.Background()
 
@@ -204,6 +211,7 @@ func TestRecentErrors_Empty(t *testing.T) {
 }
 
 func TestRecentErrors_Ordering(t *testing.T) {
+	t.Parallel()
 	s := newTestStore(t)
 	ctx := context.Background()
 
@@ -250,6 +258,7 @@ func TestRecentErrors_Ordering(t *testing.T) {
 
 // TestInsertVerifyEvent_EmptyErrorLines verifies JSON encoding of empty/nil slices.
 func TestInsertVerifyEvent_EmptyErrorLines(t *testing.T) {
+	t.Parallel()
 	s := newTestStore(t)
 	ctx := context.Background()
 
@@ -280,6 +289,7 @@ func TestInsertVerifyEvent_EmptyErrorLines(t *testing.T) {
 
 // Verify JSON round-trip fidelity of error_lines.
 func TestInsertVerifyEvent_JSONFidelity(t *testing.T) {
+	t.Parallel()
 	s := newTestStore(t)
 	ctx := context.Background()
 
