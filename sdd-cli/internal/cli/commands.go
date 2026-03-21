@@ -1146,7 +1146,7 @@ func runDashboard(args []string, stdout io.Writer, stderr io.Writer) error {
 	defer db.Close()
 
 	srv := dashboard.New(db, changesDir)
-	addr := "127.0.0.1:" + port
+	addr := "0.0.0.0:" + port
 
 	out := struct {
 		Command string `json:"command"`
