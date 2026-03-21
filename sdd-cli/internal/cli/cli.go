@@ -53,6 +53,8 @@ func Run(args []string, stdout, stderr io.Writer) error {
 		return runDoctor(rest, stdout, stderr)
 	case "errors":
 		return runErrors(rest, stdout, stderr)
+	case "completion":
+		return runCompletion(rest, stdout, stderr)
 	case "--version", "version":
 		fmt.Fprintln(stdout, version)
 		return nil
@@ -96,6 +98,7 @@ func printHelp(w io.Writer) {
 	fmt.Fprintln(w, "  dump <name>       Dump full debug state as JSON")
 	fmt.Fprintln(w, "  errors            List recorded verify failures, grouped by pattern")
 	fmt.Fprintln(w, "  doctor            Diagnose config, cache, skills, and tools")
+	fmt.Fprintln(w, "  completion <sh>   Generate shell completions (bash, zsh, fish)")
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Other:")
 	fmt.Fprintln(w, "  version           Print version")
@@ -274,6 +277,19 @@ Flags:
 
 Output: Human-readable table (default) or JSON with error groups.
 Exit:   0 success, 1 error, 2 usage`,
+
+	"completion": `sdd completion — Generate shell completions
+
+Usage: sdd completion <bash|zsh|fish>
+
+Outputs a shell completion script to stdout.
+
+Setup:
+  bash    eval "$(sdd completion bash)"    # add to ~/.bashrc
+  zsh     eval "$(sdd completion zsh)"     # add to ~/.zshrc
+  fish    sdd completion fish > ~/.config/fish/completions/sdd.fish
+
+Exit:   0 success, 2 usage`,
 
 	"archive": `sdd archive — Archive completed change
 

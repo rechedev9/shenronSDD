@@ -1,0 +1,27 @@
+run:
+  timeout: 3m
+
+linters:
+  enable:
+    - noctx
+    - tparallel
+    - govet
+    - errcheck
+    - staticcheck
+    - unused
+    - ineffassign
+    - gosimple
+
+linters-settings:
+  errcheck:
+    exclude-functions:
+      - (hash.Hash).Write
+      - (io.Writer).Write
+
+issues:
+  exclude-dirs:
+    - openspec
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - errcheck
