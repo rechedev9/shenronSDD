@@ -18,50 +18,44 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rechedev9/shenronSDD/sdd-cli/internal/config"
 	"github.com/rechedev9/shenronSDD/sdd-cli/internal/events"
+	"github.com/rechedev9/shenronSDD/sdd-cli/internal/phase"
 	"github.com/rechedev9/shenronSDD/sdd-cli/internal/state"
 )
 
-// Assembler is a function that writes assembled context to w.
-type Assembler func(w io.Writer, p *Params) error
+// Params is a type alias for phase.AssemblerParams.
+// All existing usage of *Params and Params{} continues to compile.
+type Params = phase.AssemblerParams
 
-// Params holds everything an assembler needs.
-type Params struct {
-	ChangeDir   string
-	ChangeName  string
-	Description string
-	ProjectDir  string
-	Config      *config.Config
-	SkillsPath  string
-	Stderr    io.Writer      // for metrics output; nil = discard
-	Verbosity int           // -1=quiet, 0=default, 1=verbose, 2=debug
-	Broker    *events.Broker // event broker; nil = no events
-}
-
-// dispatchers maps phases to their assembler functions.
-var dispatchers = map[state.Phase]Assembler{
-	state.PhaseExplore: AssembleExplore,
-	state.PhasePropose: AssemblePropose,
-	state.PhaseSpec:    AssembleSpec,
-	state.PhaseDesign:  AssembleDesign,
-	state.PhaseTasks:   AssembleTasks,
-	state.PhaseApply:   AssembleApply,
-	state.PhaseReview:  AssembleReview,
-	state.PhaseClean:   AssembleClean,
+func init() {
+	for _, pair := range []struct {
+		name string
+		fn   phase.Assembler
+	}{
+		{"explore", AssembleExplore},
+		{"propose", AssemblePropose},
+		{"spec", AssembleSpec},
+		{"design", AssembleDesign},
+		{"tasks", AssembleTasks},
+		{"apply", AssembleApply},
+		{"review", AssembleReview},
+		{"clean", AssembleClean},
+	} {
+		phase.DefaultRegistry.SetAssembler(pair.name, pair.fn)
+	}
 }
 
 // Assemble resolves the phase and runs the appropriate assembler.
 // Uses content-hash caching to skip assembly if inputs haven't changed.
 // Emits events via p.Broker for metrics, caching, and stderr output.
 // Enforces a size guard on assembled context.
-func Assemble(w io.Writer, phase state.Phase, p *Params) error {
-	fn, ok := dispatchers[phase]
-	if !ok {
-		return fmt.Errorf("no assembler for phase: %s", phase)
+func Assemble(w io.Writer, ph state.Phase, p *Params) error {
+	desc, ok := phase.DefaultRegistry.Get(string(ph))
+	if !ok || desc.Assemble == nil {
+		return fmt.Errorf("no assembler for phase: %s", ph)
 	}
 
-	phaseStr := string(phase)
+	phaseStr := string(ph)
 	start := time.Now()
 
 	// Try cache first.
@@ -100,7 +94,7 @@ func Assemble(w io.Writer, phase state.Phase, p *Params) error {
 
 	// Assemble into buffer for caching + size check.
 	var buf bytes.Buffer
-	if err := fn(&buf, p); err != nil {
+	if err := desc.Assemble(&buf, p); err != nil {
 		return err
 	}
 

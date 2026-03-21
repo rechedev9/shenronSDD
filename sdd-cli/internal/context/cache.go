@@ -12,26 +12,19 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/rechedev9/shenronSDD/sdd-cli/internal/phase"
 )
 
 // cacheVersion is bumped when assembler output format changes.
 // Any cache entry written with a different version is treated as stale.
 // Bump this when: adding new sections to assemblers, changing section
 // labels, modifying summary format, or changing what artifacts are loaded.
-const cacheVersion = 5
+// Bumped to 6 for phase-interface refactor (cache input lookup changed).
+const cacheVersion = 6
 
-// phaseTTL defines per-dimension cache freshness durations.
-// Different phases have different volatility during active development.
-// Phases with shorter TTLs change more frequently during active development.
-var phaseTTL = map[string]time.Duration{
-	"propose": 4 * time.Hour,
-	"spec":    2 * time.Hour,
-	"design":  2 * time.Hour,
-	"tasks":   1 * time.Hour,
-	"apply":   30 * time.Minute,
-	"review":  1 * time.Hour,
-	"clean":   1 * time.Hour,
-}
+// Phase TTL values are now in the phase registry.
+// See internal/phase/registry.go for the canonical definitions.
 
 // cacheDir returns the cache directory for a change.
 func cacheDir(changeDir string) string {
@@ -48,18 +41,25 @@ func hashCachePath(changeDir, phase string) string {
 	return filepath.Join(cacheDir(changeDir), phase+".hash")
 }
 
-// phaseInputs maps each phase to the artifacts that affect its context.
-// A change in any of these files invalidates the cached context.
-// "specs/" is a sentinel that triggers directory-level hashing.
-var phaseInputs = map[string][]string{
-	"explore": {},
-	"propose": {"exploration.md"},
-	"spec":    {"proposal.md", "exploration.md"},
-	"design":  {"proposal.md", "specs/"},
-	"tasks":   {"design.md", "specs/"},
-	"apply":   {"tasks.md", "design.md", "specs/"},
-	"review":  {"tasks.md", "design.md", "specs/"},
-	"clean":   {"verify-report.md", "tasks.md", "design.md", "specs/"},
+// Phase cache inputs are now in the phase registry.
+// See internal/phase/registry.go for the canonical definitions.
+
+// phaseCacheInputs returns CacheInputs for a phase from the registry.
+func phaseCacheInputs(name string) []string {
+	desc, ok := phase.DefaultRegistry.Get(name)
+	if !ok {
+		return nil
+	}
+	return desc.CacheInputs
+}
+
+// phaseCacheTTL returns CacheTTL for a phase from the registry.
+func phaseCacheTTL(name string) time.Duration {
+	desc, ok := phase.DefaultRegistry.Get(name)
+	if !ok {
+		return 0
+	}
+	return desc.CacheTTL
 }
 
 // inputHash computes a SHA256 hash of all input artifacts + SKILL.md for a phase.
@@ -125,10 +125,10 @@ func hashSpecsDir(h io.Writer, changeDir string) {
 // matches the current artifacts, and the TTL hasn't expired.
 // Hash file format: "{hex_hash}|{unix_seconds}"
 // Legacy files without "|" produce a cache miss (silent upgrade).
-func tryCachedContext(changeDir, phase, skillsPath string) ([]byte, bool) {
-	inputs := phaseInputs[phase] // nil/empty is ok — skill hash still applies
+func tryCachedContext(changeDir, phaseName, skillsPath string) ([]byte, bool) {
+	inputs := phaseCacheInputs(phaseName)
 
-	raw, err := os.ReadFile(hashCachePath(changeDir, phase))
+	raw, err := os.ReadFile(hashCachePath(changeDir, phaseName))
 	if err != nil {
 		return nil, false
 	}
@@ -141,13 +141,13 @@ func tryCachedContext(changeDir, phase, skillsPath string) ([]byte, bool) {
 	}
 
 	// Check content hash (includes SKILL.md).
-	currentHash := inputHash(changeDir, inputs, skillsPath, phase)
+	currentHash := inputHash(changeDir, inputs, skillsPath, phaseName)
 	if storedHash != currentHash {
 		return nil, false
 	}
 
 	// Check TTL.
-	if ttl, hasTTL := phaseTTL[phase]; hasTTL {
+	if ttl := phaseCacheTTL(phaseName); ttl > 0 {
 		ts := mustParseInt64(tsStr)
 		age := time.Since(time.Unix(ts, 0))
 		if age > ttl {
@@ -155,7 +155,7 @@ func tryCachedContext(changeDir, phase, skillsPath string) ([]byte, bool) {
 		}
 	}
 
-	cached, err := os.ReadFile(contextCachePath(changeDir, phase))
+	cached, err := os.ReadFile(contextCachePath(changeDir, phaseName))
 	if err != nil {
 		return nil, false
 	}
@@ -173,17 +173,17 @@ func mustParseInt64(s string) int64 {
 
 // saveContextCache stores the assembled context and its input hash with timestamp.
 // Format: "{hash}|{unix_seconds}"
-func saveContextCache(changeDir, phase, skillsPath string, content []byte) error {
+func saveContextCache(changeDir, phaseName, skillsPath string, content []byte) error {
 	dir := cacheDir(changeDir)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("create cache dir: %w", err)
 	}
 
-	inputs := phaseInputs[phase]
-	hash := inputHash(changeDir, inputs, skillsPath, phase)
+	inputs := phaseCacheInputs(phaseName)
+	hash := inputHash(changeDir, inputs, skillsPath, phaseName)
 	hashWithTS := fmt.Sprintf("%s|%d", hash, time.Now().Unix())
 
-	hashPath := hashCachePath(changeDir, phase)
+	hashPath := hashCachePath(changeDir, phaseName)
 	tmp := hashPath + ".tmp"
 	if err := os.WriteFile(tmp, []byte(hashWithTS), 0o644); err != nil {
 		return fmt.Errorf("write hash cache: %w", err)
@@ -193,7 +193,7 @@ func saveContextCache(changeDir, phase, skillsPath string, content []byte) error
 		return fmt.Errorf("rename hash cache: %w", err)
 	}
 
-	ctxPath := contextCachePath(changeDir, phase)
+	ctxPath := contextCachePath(changeDir, phaseName)
 	tmp = ctxPath + ".tmp"
 	if err := os.WriteFile(tmp, content, 0o644); err != nil {
 		return fmt.Errorf("write context cache: %w", err)
@@ -362,7 +362,7 @@ func CheckCacheIntegrity(changeDir, skillsPath string) (int, error) {
 			stale++
 			continue
 		}
-		inputs := phaseInputs[phase]
+		inputs := phaseCacheInputs(phase)
 		current := inputHash(changeDir, inputs, skillsPath, phase)
 		if storedHash != current {
 			stale++

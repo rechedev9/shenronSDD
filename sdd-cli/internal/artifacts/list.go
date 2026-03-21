@@ -21,7 +21,7 @@ func List(changeDir string) ([]ArtifactInfo, error) {
 	var result []ArtifactInfo
 
 	for _, phase := range state.AllPhases() {
-		name, ok := ArtifactFileName[phase]
+		name, ok := ArtifactFileName(phase)
 		if !ok {
 			continue
 		}

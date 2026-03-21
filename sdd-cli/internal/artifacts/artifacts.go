@@ -1,22 +1,17 @@
 package artifacts
 
 import (
+	"github.com/rechedev9/shenronSDD/sdd-cli/internal/phase"
 	"github.com/rechedev9/shenronSDD/sdd-cli/internal/state"
 )
 
-// ArtifactFileName maps each phase to its final artifact filename.
-// Spec is special — it's a directory, not a single file.
-var ArtifactFileName = map[state.Phase]string{
-	state.PhaseExplore: "exploration.md",
-	state.PhasePropose: "proposal.md",
-	state.PhaseSpec:    "specs",
-	state.PhaseDesign:  "design.md",
-	state.PhaseTasks:   "tasks.md",
-	state.PhaseApply:   "tasks.md", // apply updates tasks.md (marks tasks done)
-	state.PhaseReview:  "review-report.md",
-	state.PhaseVerify:  "verify-report.md",
-	state.PhaseClean:   "clean-report.md",
-	state.PhaseArchive: "archive-manifest.md",
+// ArtifactFileName returns the canonical artifact filename for a phase.
+func ArtifactFileName(ph state.Phase) (string, bool) {
+	desc, ok := phase.DefaultRegistry.Get(string(ph))
+	if !ok {
+		return "", false
+	}
+	return desc.ArtifactFile, true
 }
 
 // PendingFileName returns the filename used in .pending/ for a phase.

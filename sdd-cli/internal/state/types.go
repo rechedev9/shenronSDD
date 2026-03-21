@@ -1,6 +1,10 @@
 package state
 
-import "time"
+import (
+	"time"
+
+	"github.com/rechedev9/shenronSDD/sdd-cli/internal/phase"
+)
 
 // Phase represents a single SDD pipeline phase.
 type Phase string
@@ -70,18 +74,12 @@ func (s *State) StaleHours() int {
 	return int(time.Since(s.UpdatedAt).Hours())
 }
 
-// AllPhases returns the ordered pipeline phases.
+// AllPhases returns the ordered pipeline phases from the registry.
 func AllPhases() []Phase {
-	return []Phase{
-		PhaseExplore,
-		PhasePropose,
-		PhaseSpec,
-		PhaseDesign,
-		PhaseTasks,
-		PhaseApply,
-		PhaseReview,
-		PhaseVerify,
-		PhaseClean,
-		PhaseArchive,
+	all := phase.DefaultRegistry.AllNames()
+	result := make([]Phase, len(all))
+	for i, n := range all {
+		result[i] = Phase(n)
 	}
+	return result
 }

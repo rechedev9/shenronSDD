@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/rechedev9/shenronSDD/sdd-cli/internal/phase"
 )
 
 // Transition graph for the SDD pipeline.
@@ -20,33 +22,8 @@ import (
 // tasks requires BOTH spec AND design completed.
 // All other transitions are strictly sequential.
 
-// validNextPhases maps each phase to the set of phases it can transition to.
-var validNextPhases = map[Phase][]Phase{
-	PhaseExplore: {PhasePropose},
-	PhasePropose: {PhaseSpec, PhaseDesign},
-	PhaseSpec:    {PhaseTasks},
-	PhaseDesign:  {PhaseTasks},
-	PhaseTasks:   {PhaseApply},
-	PhaseApply:   {PhaseReview},
-	PhaseReview:  {PhaseVerify},
-	PhaseVerify:  {PhaseClean},
-	PhaseClean:   {PhaseArchive},
-	PhaseArchive: {},
-}
-
-// prerequisites maps each phase to the phases that must be completed before it can start.
-var prerequisites = map[Phase][]Phase{
-	PhaseExplore: {},
-	PhasePropose: {PhaseExplore},
-	PhaseSpec:    {PhasePropose},
-	PhaseDesign:  {PhasePropose},
-	PhaseTasks:   {PhaseSpec, PhaseDesign},
-	PhaseApply:   {PhaseTasks},
-	PhaseReview:  {PhaseApply},
-	PhaseVerify:  {PhaseReview},
-	PhaseClean:   {PhaseVerify},
-	PhaseArchive: {PhaseClean},
-}
+// Prerequisites and valid-next-phase data are now in the phase registry.
+// See internal/phase/registry.go for the canonical definitions.
 
 var (
 	ErrInvalidTransition = errors.New("invalid phase transition")
@@ -61,10 +38,13 @@ func (s *State) CanTransition(target Phase) error {
 		return fmt.Errorf("%w: %s already completed", ErrAlreadyCompleted, target)
 	}
 
-	// Check prerequisites are met.
-	for _, req := range prerequisites[target] {
-		if s.Phases[req] != StatusCompleted {
-			return fmt.Errorf("%w: %s requires %s completed (currently %s)", ErrPrerequisitesNotMet, target, req, s.Phases[req])
+	desc, ok := phase.DefaultRegistry.Get(string(target))
+	if !ok {
+		return fmt.Errorf("unknown phase: %s", target)
+	}
+	for _, req := range desc.Prerequisites {
+		if s.Phases[Phase(req)] != StatusCompleted {
+			return fmt.Errorf("%w: %s requires %s completed (currently %s)", ErrPrerequisitesNotMet, target, req, s.Phases[Phase(req)])
 		}
 	}
 
@@ -92,9 +72,13 @@ func (s *State) nextReady() Phase {
 		if s.Phases[p] != StatusPending {
 			continue
 		}
+		desc, ok := phase.DefaultRegistry.Get(string(p))
+		if !ok {
+			continue
+		}
 		ready := true
-		for _, req := range prerequisites[p] {
-			if s.Phases[req] != StatusCompleted {
+		for _, req := range desc.Prerequisites {
+			if s.Phases[Phase(req)] != StatusCompleted {
 				ready = false
 				break
 			}
@@ -115,9 +99,13 @@ func (s *State) ReadyPhases() []Phase {
 		if s.Phases[p] != StatusPending {
 			continue
 		}
+		desc, ok := phase.DefaultRegistry.Get(string(p))
+		if !ok {
+			continue
+		}
 		allMet := true
-		for _, req := range prerequisites[p] {
-			if s.Phases[req] != StatusCompleted {
+		for _, req := range desc.Prerequisites {
+			if s.Phases[Phase(req)] != StatusCompleted {
 				allMet = false
 				break
 			}
@@ -209,29 +197,23 @@ func validate(s *State) error {
 func Recover(name, description, changeDir string) *State {
 	s := NewState(name, description)
 
-	// Map of phase → expected artifact filename.
-	artifacts := map[Phase]string{
-		PhaseExplore: "exploration.md",
-		PhasePropose: "proposal.md",
-		PhaseSpec:    "specs",   // directory
-		PhaseDesign:  "design.md",
-		PhaseTasks:   "tasks.md",
-		PhaseReview:  "review-report.md",
-		PhaseVerify:  "verify-report.md",
-	}
-
-	for phase, artifact := range artifacts {
-		path := filepath.Join(changeDir, artifact)
-		if info, err := os.Stat(path); err == nil {
-			// For directories (specs), check it's non-empty.
-			if info.IsDir() {
-				entries, _ := os.ReadDir(path)
-				if len(entries) == 0 {
-					continue
-				}
-			}
-			s.Phases[phase] = StatusCompleted
+	for _, desc := range phase.DefaultRegistry.All() {
+		if desc.ArtifactFile == "" || desc.RecoverSkip {
+			continue
 		}
+		ph := Phase(desc.Name)
+		path := filepath.Join(changeDir, desc.ArtifactFile)
+		info, err := os.Stat(path)
+		if err != nil {
+			continue
+		}
+		if info.IsDir() {
+			entries, _ := os.ReadDir(path)
+			if len(entries) == 0 {
+				continue
+			}
+		}
+		s.Phases[ph] = StatusCompleted
 	}
 
 	s.CurrentPhase = s.nextReady()

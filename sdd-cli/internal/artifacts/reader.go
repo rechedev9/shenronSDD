@@ -10,7 +10,7 @@ import (
 
 // Read reads a promoted artifact for a given phase from the change directory.
 func Read(changeDir string, phase state.Phase) ([]byte, error) {
-	name, ok := ArtifactFileName[phase]
+	name, ok := ArtifactFileName(phase)
 	if !ok {
 		return nil, fmt.Errorf("no artifact defined for phase: %s", phase)
 	}

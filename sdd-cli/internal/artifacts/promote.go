@@ -20,7 +20,7 @@ func Promote(changeDir string, phase state.Phase) (string, error) {
 		return "", fmt.Errorf("%w: %s (expected at %s)", ErrNoPending, phase, src)
 	}
 
-	finalName, ok := ArtifactFileName[phase]
+	finalName, ok := ArtifactFileName(phase)
 	if !ok {
 		return "", fmt.Errorf("no artifact mapping for phase: %s", phase)
 	}
