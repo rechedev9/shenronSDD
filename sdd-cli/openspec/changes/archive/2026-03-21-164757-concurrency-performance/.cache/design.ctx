@@ -1,0 +1,906 @@
+
+--- SKILL ---
+
+---
+name: sdd-design
+description: >
+  Create technical design document capturing HOW the change is implemented. Architecture decisions, data flow, interfaces.
+  Trigger: When user runs /sdd-continue after proposal is approved, or after sdd-propose completes.
+license: MIT
+metadata:
+  version: "1.0"
+---
+
+# SDD Design
+
+You are executing the **design** phase inline. While the proposal captures WHAT and WHY, and specs capture the requirements, the design captures HOW the change will be implemented at the architecture and code-structure level. Your design must follow existing project patterns and conventions.
+
+## Activation
+
+User runs `/sdd-continue` or `/sdd-design` after the proposal is approved. Reads `openspec/changes/{changeName}/proposal.md`, existing spec files if present, and `exploration.md` if available.
+
+## Execution Steps
+
+### Step 1: Load Project Context
+
+1. Read `openspec/config.yaml` for:
+   - Technology stack (runtime, frameworks, ORM, database)
+   - Architecture pattern (monorepo, workspaces)
+   - Coding conventions (type strictness, error handling, file organization)
+   - Design phase required sections (`phases.design.required_sections`)
+2. Read `CLAUDE.md` for any additional rules not captured in config.
+3. **Load framework skills.** Based on the tech stack identified in config.yaml, read the relevant skill file(s) from `~/.claude/skills/frameworks/` before designing components or interfaces for that domain. For example: React → `react-19/SKILL.md`, Next.js → `nextjs-15/SKILL.md`, Tailwind → `tailwind-4/SKILL.md`, Zod → `zod-4/SKILL.md`. If a skill file does not exist, proceed without it. This step is required so that interface definitions and data flow diagrams follow idiomatic patterns for the project's actual framework versions.
+4. Note all constraints from `CLAUDE.md` that affect design decisions (type strictness, error handling patterns, file organization limits, etc.).
+
+### Step 2: Read Proposal and Optional Specs
+
+1. Read `proposal.md` at the provided path.
+2. Extract:
+   - Approach and key decisions
+   - Affected areas with file paths
+   - Dependencies (internal and external)
+   - Success criteria
+3. If `spec_paths` are provided, read spec files to align design with requirements:
+   - Map each requirement to a design component
+   - Ensure every MUST requirement has a clear implementation path
+4. If `exploration_path` is provided, read for additional codebase context.
+
+### Step 3: Analyze Existing Codebase Patterns
+
+This is a critical step. The design MUST follow existing patterns. Read source code to understand:
+
+1. **Project structure**: How are files organized? What naming conventions are used?
+   - Use Glob to map the directory tree
+   - Identify patterns: feature-based, layer-based, domain-driven
+2. **Type patterns**: How are types/interfaces defined and shared?
+   - Search for type definition files and shared type locations
+   - Note generic patterns used (Result types, Option types, error enums, etc.)
+3. **Error handling patterns**: How are errors created and propagated?
+   - Find the project's error handling pattern and how it is used
+   - Identify error type conventions (custom error types, error enums, etc.)
+   - Note error boundary patterns if applicable (UI frameworks, middleware, etc.)
+4. **API patterns**: How are endpoints defined?
+   - Read existing route/controller files
+   - Note middleware usage, validation patterns, response shapes
+5. **Database patterns**: How are queries structured?
+   - Read existing repository/service files
+   - Note ORM usage, transaction patterns, migration conventions
+6. **Testing patterns**: How are tests structured?
+   - Read existing test files
+   - Note test grouping patterns, assertion styles, and test runner conventions
+
+### Step 4: Make Architecture Decisions
+
+For each significant design choice, evaluate alternatives:
+
+| Decision Criteria    | What to Evaluate                              |
+|----------------------|-----------------------------------------------|
+| Consistency          | Does this match existing project patterns?    |
+| Type safety          | Can this be fully typed without escape hatches?|
+| Testability          | Can each component be tested in isolation?    |
+| Simplicity           | Is this the simplest solution that works?     |
+| Performance          | Are there known performance implications?     |
+| Maintainability      | Will future developers understand this?       |
+
+Every decision must have at least 2 alternatives with rationale for the chosen option. If existing project code already establishes a pattern, "consistency with existing code" is a valid (and strong) rationale.
+
+### Step 5: Design Data Flow
+
+Create clear data flow descriptions showing how data moves through the system for each key operation:
+
+```
+User Action
+  -> Frontend Component (file path)
+    -> API Call (endpoint, method, payload type)
+      -> Backend Handler (file path)
+        -> Validation (schema, types)
+          -> Business Logic (service file path)
+            -> Database Query (repository file path)
+              -> Response (type, shape)
+            <- Error Path (error type per project conventions)
+          <- Validation Error (shape)
+        <- HTTP Response (status, body type)
+      <- Frontend State Update (store/hook file path)
+    <- UI Update (component re-render)
+```
+
+Use ASCII diagrams for complex flows. Keep it readable without specialized tooling.
+
+### Step 6: Define Interfaces and Contracts
+
+Write type/interface definitions in the project's language. Use the actual syntax that will compile/type-check — not pseudocode. Follow the project's error handling pattern (per CLAUDE.md) for fallible operations.
+
+For API endpoints, define request/response contracts:
+
+```
+POST /api/{resource}
+  Request Body: Create{Thing}Input
+  Response 201: { data: {Thing} }
+  Response 400: { error: { code: string, message: string } }
+  Response 401: { error: { code: 'UNAUTHORIZED' } }
+```
+
+For database schemas, define the migration:
+
+```sql
+-- Migration: add_{table_name}
+CREATE TABLE {table_name} (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  ...
+);
+```
+
+### Step 7: Plan Testing Strategy
+
+Map each requirement (from specs if available, or from proposal success criteria) to a testing approach:
+
+| What to Test                  | Type        | Approach                          | File Path                    |
+|-------------------------------|-------------|-----------------------------------|------------------------------|
+| {Feature} input validation    | Unit        | Test each validation rule         | {path per project convention} |
+| {Feature} business logic      | Unit        | Test success/error paths          | {path per project convention} |
+| {Feature} API endpoint        | Integration | Test HTTP request/response cycle  | {path per project convention} |
+| {Feature} error handling      | Unit        | Test all error variants           | {path per project convention} |
+| {Feature} database operations | Integration | Test with real DB (test container) | {path per project convention} |
+
+For each test, note:
+- What dependencies need to be mocked vs. real
+- What fixtures/factories are needed
+- Whether it maps to a specific spec scenario (reference REQ-ID)
+
+### Step 8: Write design.md
+
+Create `openspec/changes/{change_name}/design.md`:
+
+```markdown
+# Technical Design: {Change Name (title case)}
+
+**Change**: {change_name}
+**Date**: {ISO 8601 timestamp}
+**Status**: draft
+**Depends On**: proposal.md
+
+---
+
+## Technical Approach
+
+{2-3 paragraphs describing the overall technical strategy. How does this fit into the existing architecture? What patterns does it follow? What is the high-level implementation path?}
+
+## Architecture Decisions
+
+| # | Decision                | Choice              | Alternatives Considered      | Rationale                              |
+|---|-------------------------|---------------------|------------------------------|----------------------------------------|
+| 1 | {Decision point}        | {Chosen approach}   | {Alt 1}, {Alt 2}             | {Why chosen over alternatives}         |
+| 2 | {Decision point}        | {Chosen approach}   | {Alt 1}, {Alt 2}             | {Why chosen over alternatives}         |
+| 3 | {Decision point}        | {Chosen approach}   | {Alt 1}, {Alt 2}             | {Why chosen over alternatives}         |
+
+## Data Flow
+
+### {Operation 1 Name}
+
+{ASCII diagram or step-by-step description showing data flow}
+
+### {Operation 2 Name}
+
+{ASCII diagram or step-by-step description showing data flow}
+
+## File Changes
+
+| # | File Path (absolute)           | Action  | Description                               |
+|---|--------------------------------|---------|-------------------------------------------|
+| 1 | {/abs/path/to/file.ts}        | create  | {What this new file contains}             |
+| 2 | {/abs/path/to/existing.ts}    | modify  | {What changes and why}                    |
+| 3 | {/abs/path/to/deprecated.ts}  | delete  | {Why this file is being removed}          |
+
+**Summary**: {N} files created, {N} files modified, {N} files deleted
+
+## Interfaces and Contracts
+
+### Types
+
+{TypeScript type definitions for new interfaces}
+
+### API Contracts
+
+{Request/response contracts for new or modified endpoints}
+
+### Database Schema
+
+{Migration SQL or ORM schema definitions, if applicable}
+
+## Testing Strategy
+
+| # | What to Test                  | Type         | File Path                          | Maps to Requirement |
+|---|-------------------------------|--------------|------------------------------------|---------------------|
+| 1 | {Test subject}                | unit         | {/abs/path/to/test file}       | REQ-{DOMAIN}-{NNN} |
+| 2 | {Test subject}                | unit         | {/abs/path/to/test file}       | REQ-{DOMAIN}-{NNN} |
+| 3 | {Test subject}                | integration  | {/abs/path/to/test file}       | REQ-{DOMAIN}-{NNN} |
+
+### Test Dependencies
+
+- **Mocks needed**: {list of dependencies to mock}
+- **Fixtures needed**: {list of test data factories}
+- **Infrastructure**: {test database, test containers, etc.}
+
+## Migration and Rollout
+
+{How to deploy this change safely. If no deployment changes needed, state "No migration or rollout steps required."}
+
+### Migration Steps
+
+1. {Step 1 - e.g., "Run database migration"}
+2. {Step 2 - e.g., "Deploy backend with feature flag disabled"}
+3. {Step 3 - e.g., "Enable feature flag for beta users"}
+
+### Rollback Steps
+
+{Reference the proposal's rollback plan and add technical details}
+
+## Open Questions
+
+{Any technical questions that arose during design. These should be resolved before implementation.}
+
+- {Question 1}
+- {Question 2}
+
+---
+
+**Next Step**: After both design and specs are complete, run `sdd-tasks` to create the implementation checklist.
+```
+
+### Step 9: Validate Design Completeness
+
+Before returning, validate:
+
+1. **Every file from the proposal's affected areas** appears in the File Changes table.
+2. **Every success criterion** has a corresponding testing strategy entry.
+3. **Architecture decisions** each have at least 2 alternatives.
+4. **Interfaces use project conventions** (per CLAUDE.md type safety and error handling rules).
+5. **File paths are absolute** throughout the document.
+6. **New files follow project naming conventions** (kebab-case, colocated tests, etc.).
+7. **The design does not exceed project file length limits** (plan to split large files).
+
+### Step 10: Present Summary
+
+Present a markdown summary to the user, then STOP. Do not proceed automatically.
+
+**On success, output:**
+
+```markdown
+## SDD Design: {change_name}
+
+**Decisions**: {N}  |  **File changes**: {create}✚ {modify}✎ {delete}✗  |  **Interfaces**: {N}
+
+### Design Written
+`openspec/changes/{change_name}/design.md`
+
+### File Changes Planned
+| Action | Count |
+|--------|-------|
+| Create | {N} |
+| Modify | {N} |
+| Delete | {N} |
+
+### Interfaces Defined
+{List interface names — 1 per line}
+
+### Testing Strategy
+- **Test cases planned**: {N}
+- **Has database migration**: {yes | no}
+
+{If open questions: ### Open Questions ({N})\n{questions — must be resolved before implementation}\n}
+{If warnings: ### ⚠ Warnings\n- {warning}\n}
+
+**Next step**: Review `openspec/changes/{change_name}/design.md`. When both design and spec are complete, run `/sdd-tasks` to generate the implementation checklist.
+```
+
+## Rules and Constraints
+
+1. **Design MUST follow existing project patterns.** Read code first, then design. Never introduce patterns that conflict with the codebase.
+2. **Include actual type/interface definitions** in the project's language, not pseudo-code. They must compile/type-check.
+3. **Architecture decisions MUST have at least 2 alternatives** with rationale. Single-option "decisions" are not decisions.
+4. **File Changes MUST list EVERY file** that will be created, modified, or deleted. No surprises during implementation.
+5. **Testing strategy MUST cover each requirement** from specs (if available) or each success criterion from proposal.
+6. **Design can run in PARALLEL with sdd-spec.** Both depend only on the proposal.
+7. **Follow the project's error handling pattern** (per CLAUDE.md). Define error variants explicitly.
+8. **All file paths must be absolute.** Never use relative paths.
+9. **Never modify source code.** Design artifacts go in `openspec/changes/{change_name}/`.
+10. **Respect file organization rules.** If the project limits files to 600 lines, plan to split accordingly.
+11. **Interface definitions must be strict.** Use the project's immutability patterns, explicit return types, and no type-system escape hatches (per CLAUDE.md).
+12. **Data flow diagrams must be ASCII-based.** Do not reference external diagramming tools. The design must be readable in any text editor.
+13. **Load framework skills before designing.** Read `~/.claude/skills/frameworks/{framework}/SKILL.md` for every active framework in the project before defining interfaces, data flow, or architecture decisions for that domain. Designing without the framework skill risks specifying deprecated APIs or non-idiomatic patterns that sdd-apply will then implement incorrectly.
+
+## Error Handling
+
+- If `openspec/config.yaml` does not exist: return `status: error` recommending `sdd-init`.
+- If `proposal.md` does not exist: return `status: error` with message.
+- If existing codebase patterns are inconsistent: note in warnings and follow the most common pattern.
+- If the design reveals the proposal scope is insufficient: note in `open_questions` and warn.
+- All errors include the phase name (`design`) and a human-readable message.
+
+## PARCER Contract
+
+```yaml
+phase: design
+preconditions:
+  - proposal.md exists and was approved
+postconditions:
+  - design.md written with all required sections
+  - ≥1 interface definition with typed fields
+```
+
+
+--- CHANGE ---
+
+Name: concurrency-performance
+Description: Phase 4 concurrency and performance — lazy artifact loading via csync.LazySlice, pub/sub event broker to decouple state machine from side effects, pprof profiling gate behind env var
+
+--- PROJECT ---
+
+Project: sdd-cli
+Language: go
+Build Tool: go
+Manifests: go.mod
+
+--- PIPELINE CONTEXT ---
+
+Change: concurrency-performance — Phase 4 concurrency and performance — lazy artifact loading via csync.LazySlice, pub/sub event broker to decouple state machine from side effects, pprof profiling gate behind env var
+Stack: go (go)
+Exploration: The sdd-cli is a Go CLI (go 1.24.1, sole dependency: `gopkg.in/yaml.v3`) that assembles structured context for each phase of a spec-driven development pipeline. The codebase is approximately 6,963 lines across all Go files (source + tests). It is single-threaded with one concurrency point (`AssembleConcurrent`), has no profiling infrastructure, and tightly couples state transitions with side effects (metrics recording, cache writes, stderr output).
+Proposal: The sdd-cli assembles context per-phase by sequentially reading 3-10+ files and running git commands, tightly couples side effects (metrics, caching, stderr output) into the assembly hot path, and has no profiling infrastructure. This change introduces lazy concurrent artifact loading, an event broker to decouple side effects, and an env-var-gated pprof profiling hook — improving assembly latency, fixing a metrics.json race in `AssembleConcurrent`, and enabling data-driven performance work.
+
+--- PROPOSAL ---
+
+# Proposal: Concurrency and Performance
+
+**Change ID**: concurrency-performance
+**Date**: 2026-03-21
+**Status**: draft
+
+---
+
+## Intent
+
+The sdd-cli assembles context per-phase by sequentially reading 3-10+ files and running git commands, tightly couples side effects (metrics, caching, stderr output) into the assembly hot path, and has no profiling infrastructure. This change introduces lazy concurrent artifact loading, an event broker to decouple side effects, and an env-var-gated pprof profiling hook — improving assembly latency, fixing a metrics.json race in `AssembleConcurrent`, and enabling data-driven performance work.
+
+## Scope
+
+### In Scope
+- New `internal/csync` package with `LazySlice[T]` generic type (bounded goroutine pool, per-element `sync.Once`)
+- Refactor all 8 assembler functions to use `LazySlice` for concurrent file/exec loading
+- New `internal/events` package with `Broker` type and typed event structs
+- Migrate `recordMetrics()`, `writeMetrics()`, and `saveContextCache()` from inline calls to event subscribers
+- Emit events from `Assemble()` in `context.go` and `runWrite()` in `commands.go`
+- `SDD_PPROF` env var check in `cmd/sdd/main.go` for CPU and heap profiling to file
+- Add pprof availability check to `sdd doctor`
+- Unit tests for `LazySlice` (with `-race`), `Broker`, and pprof gating
+
+### Out of Scope
+- HTTP-based pprof server — no HTTP server exists in the CLI; `runtime/pprof` write-to-file is sufficient
+- Replacing `AssembleConcurrent` with a generic pipeline scheduler — current WaitGroup pattern is adequate for the spec+design parallel window
+- Making `LazySlice` concurrency bound configurable via env var — hardcoded `min(NumCPU, 8)` is sufficient; can revisit if CI tuning is needed
+- External dependencies — all implementations use stdlib only
+- Tracing or OpenTelemetry integration — event broker provides the hook point; actual telemetry is future work
+
+## Approach
+
+Implementation proceeds in three stages ordered by ascending risk and descending immediacy of value. First, the pprof gate: a ~15-line addition to `cmd/sdd/main.go` that checks `SDD_PPROF` and wraps `cli.Run()` with `runtime/pprof` start/stop. This gives immediate profiling capability for validating the subsequent work.
+
+Second, `csync.LazySlice[T]`: a new generic type that wraps `[]func() (T, error)` with a bounded goroutine pool. Each assembler (explore, propose, spec, design, tasks, apply, review, clean) is refactored to construct loader functions for its I/O calls (file reads via `loadSkill`/`loadArtifact`/`loadSpecs`, git exec via `gitFileTree`/`gitDiff`, summary building via `buildSummary`), then call `LoadAll()` to fan out concurrently. The assembler body then accesses results by index. This is a mechanical refactor — each assembler's sequential calls become loader closures.
+
+Third, the event broker: a simple observer pattern where `Assemble()` (context.go:55-96) emits `PhaseAssembled`/`CacheHit`/`CacheMiss` events and `runWrite()` (commands.go:312-371) emits `ArtifactPromoted`/`StateAdvanced` events. The current inline `recordMetrics()` (cache.go:274-313) and `writeMetrics()` (cache.go:230-246) calls become subscribers registered at startup. This fixes the metrics.json race in `AssembleConcurrent` by routing all writes through a single serialized subscriber, and decouples the assembler from knowledge of caching and metrics concerns.
+
+### Key Decisions
+
+| Decision | Choice | Rationale |
+|----------|--------|-----------|
+| Lazy loading strategy | LazySlice per-assembler (not pre-fetch in `Assemble()` or `fs.FS`) | Handles git exec and `buildSummary` calls, not just file reads. Composable generic primitive reusable elsewhere. Pre-fetch misses git commands; `fs.FS` is over-engineered. |
+| Event dispatch model | In-process pub/sub broker (not callbacks on State, not channels) | Clean separation of concerns, fixes metrics.json race via serialized subscriber, testable with mock listeners. Callbacks don't fix concurrency; channels add lifecycle complexity. |
+| Profiling gate | `SDD_PPROF` env var in `main.go` (not CLI flag, not build tag) | Dev-only diagnostic — env var is zero-cost when off, follows Go idioms (`GODEBUG`, `GORACE`). CLI flag pollutes user-facing help. Build tag requires recompilation. |
+| Implementation order | pprof -> LazySlice -> event broker | Ascending risk. pprof provides profiling for validating the other two. LazySlice is independent of the broker. Broker depends on understanding the side-effect call sites that LazySlice may shift. |
+| Goroutine bound | `min(runtime.NumCPU(), 8)` hardcoded | Typical assembler loads 3-10 files; 8 goroutines saturates local I/O. Avoids config complexity. |
+| Broker injection | Via `Params` struct field (not global singleton) | Testable, no global state. The field is set once in `runContext`/`runNew` and passed through existing `Params` plumbing. Nil-safe — nil broker means no event dispatch. |
+
+## Affected Areas
+
+| Module / Area | File Path | Change Type | Risk Level |
+|---------------|-----------|-------------|------------|
+| Entry point | `/home/reche/projects/SDDworkflow/sdd-cli/cmd/sdd/main.go` | Modified — pprof gate | Low |
+| Concurrency primitives | `/home/reche/projects/SDDworkflow/sdd-cli/internal/csync/lazyslice.go` | New — `LazySlice[T]` type | Medium |
+| Concurrency tests | `/home/reche/projects/SDDworkflow/sdd-cli/internal/csync/lazyslice_test.go` | New — race-detector tests | Low |
+| Event broker | `/home/reche/projects/SDDworkflow/sdd-cli/internal/events/broker.go` | New — `Broker`, event types | Medium |
+| Event broker tests | `/home/reche/projects/SDDworkflow/sdd-cli/internal/events/broker_test.go` | New — dispatch/subscribe tests | Low |
+| Assembler dispatcher | `/home/reche/projects/SDDworkflow/sdd-cli/internal/context/context.go` | Modified — emit events from `Assemble()`, add `Broker` to `Params` | Medium |
+| Cache/metrics | `/home/reche/projects/SDDworkflow/sdd-cli/internal/context/cache.go` | Modified — extract `recordMetrics`/`writeMetrics`/`saveContextCache` into event subscribers | Medium |
+| Explore assembler | `/home/reche/projects/SDDworkflow/sdd-cli/internal/context/explore.go` | Modified — LazySlice refactor | Low |
+| Propose assembler | `/home/reche/projects/SDDworkflow/sdd-cli/internal/context/propose.go` | Modified — LazySlice refactor | Low |
+| Spec assembler | `/home/reche/projects/SDDworkflow/sdd-cli/internal/context/spec.go` | Modified — LazySlice refactor | Low |
+| Design assembler | `/home/reche/projects/SDDworkflow/sdd-cli/internal/context/design.go` | Modified — LazySlice refactor | Low |
+| Tasks assembler | `/home/reche/projects/SDDworkflow/sdd-cli/internal/context/tasks.go` | Modified — LazySlice refactor | Low |
+| Apply assembler | `/home/reche/projects/SDDworkflow/sdd-cli/internal/context/apply.go` | Modified — LazySlice refactor | Low |
+| Review assembler | `/home/reche/projects/SDDworkflow/sdd-cli/internal/context/review.go` | Modified — LazySlice refactor | Low |
+| Clean assembler | `/home/reche/projects/SDDworkflow/sdd-cli/internal/context/clean.go` | Modified — LazySlice refactor | Low |
+| CLI commands | `/home/reche/projects/SDDworkflow/sdd-cli/internal/cli/commands.go` | Modified — emit events from `runWrite()`, wire broker into `Params` | Medium |
+| Doctor checks | `/home/reche/projects/SDDworkflow/sdd-cli/internal/cli/doctor.go` | Modified — add pprof env var check | Low |
+
+**Total files affected**: 18
+**New files**: 4
+**Modified files**: 14
+**Deleted files**: 0
+
+## Risks
+
+| Risk | Probability | Impact | Mitigation |
+|------|-------------|--------|------------|
+| LazySlice goroutine leak on assembler error | Low | Medium | `LoadAll()` waits on all goroutines via `sync.WaitGroup` before returning, regardless of errors. Unit test with intentional errors + race detector. |
+| Event broker subscriber panic crashes CLI | Low | High | Broker wraps each subscriber dispatch in `defer recover()`. Subscriber panics logged to stderr but do not propagate to caller. |
+| Assembler refactor changes output byte order | Medium | High | Each assembler's `writeSection` calls remain identical — only the I/O scheduling changes (results accessed by index, not arrival order). Existing `context_test.go` tests (541 lines) validate output content. Full test suite with `-race` before merge. |
+| `Params.Broker` nil dereference in tests | Medium | Low | `Assemble()` nil-checks broker before emitting. Tests that don't set a broker continue to work without events. |
+| Metrics.json data loss during migration | Low | Low | Metrics are best-effort and regenerated on next assembly. No user-visible data depends on metrics.json continuity. |
+| pprof profile file left in CWD | Low | Low | Profile files (`sdd-cpu.prof`, `sdd-mem.prof`) only created when `SDD_PPROF` is explicitly set. Documented in `sdd doctor` output. |
+
+**Overall Risk Level**: medium
+
+## Rollback Plan
+
+### Steps to Rollback
+1. Revert the merge commit — all three features are additive with no schema or state format changes
+2. The `internal/csync` and `internal/events` packages are self-contained; removing them has no cascade effects
+3. Assemblers revert to sequential `loadSkill`/`loadArtifact` calls (the pre-change pattern)
+4. `Assemble()` and `runWrite()` revert to inline `recordMetrics`/`saveContextCache` calls
+5. `main.go` pprof block is removed (single `if` block)
+
+### Rollback Verification
+- `go test ./... -race` passes (confirms no residual concurrency references)
+- `go build ./cmd/sdd` succeeds (confirms no import of removed packages)
+- `sdd context <change> explore` produces identical output to pre-change version
+- `sdd doctor` runs without errors
+
+## Dependencies
+
+### Internal Dependencies
+- `internal/state.Phase` type used as event payload field — no changes to state package required
+- `internal/context.Params` struct gains a `Broker` field — backward compatible (zero-value nil means no events)
+- `internal/config.Config` unchanged
+
+### External Dependencies
+- None. All implementations use Go stdlib only (`sync`, `runtime/pprof`, `runtime`). No new external dependencies added to `go.mod`.
+
+### Infrastructure Dependencies
+- Go 1.24.1 generics support (already in use per `go.mod`)
+- Race detector (`go test -race`) for CI validation of `csync` and `events` packages
+
+## Success Criteria
+
+- [ ] `go test ./... -race` passes with zero data races
+- [ ] `SDD_PPROF=cpu sdd context <change> explore` produces `sdd-cpu.prof` loadable by `go tool pprof`
+- [ ] `SDD_PPROF=mem sdd context <change> explore` produces `sdd-mem.prof`
+- [ ] `sdd doctor` reports pprof availability status
+- [ ] All 8 assemblers produce byte-identical output with LazySlice vs sequential loading (verified by existing context_test.go)
+- [ ] `AssembleConcurrent` spec+design parallel window no longer races on metrics.json (verified via `-race` flag)
+- [ ] Event broker emits `PhaseAssembled`, `CacheHit`, `CacheMiss` events observable by test subscriber
+- [ ] `runWrite()` emits `ArtifactPromoted` and `StateAdvanced` events observable by test subscriber
+- [ ] No new external dependencies in `go.mod`
+- [ ] Benchmark: `sdd context` for review phase (highest I/O count at 5+N+rules ops) shows measurable wall-clock improvement with LazySlice vs sequential baseline
+
+## Open Questions
+
+- **LazySlice concurrency bound**: Should the goroutine pool be configurable via `SDD_CONCURRENCY` env var, or is `min(runtime.NumCPU(), 8)` sufficient? Current assemblers load 3-10 files; 8 goroutines likely saturates local disk I/O. Deferring configurability unless CI profiling shows contention.
+- **Event broker sync vs async dispatch**: Should subscribers run synchronously in the emitter's goroutine or asynchronously in a dedicated goroutine? Current side effects (metrics write, cache save) are best-effort and fast (<1ms each), suggesting synchronous is adequate. Will decide during spec phase after profiling overhead.
+- **Metrics.json race fix scope**: The current race in `AssembleConcurrent` where two goroutines both call `recordMetrics()` (cache.go:274) is a last-writer-wins data loss bug affecting the spec+design parallel window. The event broker fixes this by serializing writes. Should we also add `sync.Mutex` as belt-and-suspenders, or is the broker sufficient?
+- **pprof output directory**: Profile files written to CWD matches the crash log pattern in `main.go` (line 24). Should they go to `openspec/.cache/` instead to avoid cluttering the project root?
+
+
+--- SPECIFICATIONS ---
+
+### spec.md
+
+# Spec: Concurrency and Performance
+
+**Change ID**: concurrency-performance
+**Date**: 2026-03-21
+**Status**: draft
+
+---
+
+## Domain 1: csync (LazySlice)
+
+Package `internal/csync` provides a generic bounded-concurrency primitive for fanning out I/O loaders (file reads, git exec) used by the 8 assembler functions in `internal/context/`.
+
+### REQ-CSYNC-001: LazySlice Generic Type
+
+`LazySlice[T]` MUST be a generic struct parameterized over result type `T`. It MUST accept a slice of loader functions with signature `func() (T, error)` at construction time. The constructor MUST be `NewLazySlice[T](loaders []func() (T, error)) *LazySlice[T]`.
+
+#### Scenario: Construction with loaders · `code-based` · `critical`
+- **WHEN** `NewLazySlice[[]byte]` is called with 5 loader functions
+- **THEN** a non-nil `*LazySlice[[]byte]` is returned with `Len() == 5`
+
+#### Scenario: Construction with empty slice · `code-based` · `critical`
+- **WHEN** `NewLazySlice[string]` is called with an empty slice
+- **THEN** a non-nil `*LazySlice[string]` is returned with `Len() == 0`
+
+#### Scenario: Construction with nil slice · `code-based` · `critical`
+- **WHEN** `NewLazySlice[int]` is called with `nil`
+- **THEN** a non-nil `*LazySlice[int]` is returned with `Len() == 0`
+
+### REQ-CSYNC-002: Bounded Goroutine Pool
+
+`LoadAll()` MUST fan out loader execution across goroutines. The number of concurrent goroutines MUST NOT exceed `min(runtime.NumCPU(), 8)`. This bound prevents goroutine explosion on machines with many cores or when assemblers load many files.
+
+#### Scenario: Goroutine bound respected · `code-based` · `critical`
+- **GIVEN** `runtime.NumCPU()` returns 16
+- **WHEN** `LoadAll()` is called on a `LazySlice` with 20 loaders
+- **THEN** at no point during execution do more than 8 loader goroutines run concurrently
+
+#### Scenario: Goroutine bound on low-core machine · `code-based` · `important`
+- **GIVEN** `runtime.NumCPU()` returns 2
+- **WHEN** `LoadAll()` is called on a `LazySlice` with 10 loaders
+- **THEN** at no point during execution do more than 2 loader goroutines run concurrently
+
+#### Scenario: Fewer loaders than bound · `code-based` · `important`
+- **WHEN** `LoadAll()` is called on a `LazySlice` with 3 loaders and bound is 8
+- **THEN** all 3 loaders execute concurrently (no unnecessary serialization)
+
+### REQ-CSYNC-003: LoadAll Blocks Until Completion
+
+`LoadAll()` MUST block the calling goroutine until every loader has either returned a value or an error. After `LoadAll()` returns, results MUST be accessible by index via `Get(i int) (T, error)`.
+
+#### Scenario: All loaders complete successfully · `code-based` · `critical`
+- **WHEN** `LoadAll()` is called on a `LazySlice` with 5 loaders that each return distinct values
+- **THEN** `LoadAll()` returns nil, and `Get(0)` through `Get(4)` each return the corresponding loader's value with nil error
+
+#### Scenario: Result ordering matches input ordering · `code-based` · `critical`
+- **WHEN** loaders are provided in order [A, B, C] and loader B completes before A
+- **THEN** `Get(0)` returns A's result, `Get(1)` returns B's result, `Get(2)` returns C's result (positional, not arrival-order)
+
+#### Scenario: LoadAll on empty slice · `code-based` · `important`
+- **WHEN** `LoadAll()` is called on a `LazySlice` with 0 loaders
+- **THEN** `LoadAll()` returns nil immediately
+
+### REQ-CSYNC-004: Per-Element Error Handling
+
+Individual loader failures MUST NOT prevent other loaders from completing. `LoadAll()` MUST return a non-nil error if any loader failed. Each element's error MUST be retrievable independently via `Get(i)`.
+
+#### Scenario: Partial failure · `code-based` · `critical`
+- **WHEN** `LoadAll()` is called with loaders [ok, fail, ok] where loader 1 returns an error
+- **THEN** `LoadAll()` returns a non-nil error, `Get(0)` returns (value, nil), `Get(1)` returns (zero, error), `Get(2)` returns (value, nil)
+
+#### Scenario: All loaders fail · `code-based` · `important`
+- **WHEN** `LoadAll()` is called with 3 loaders that all return errors
+- **THEN** `LoadAll()` returns a non-nil error, and `Get(0)`, `Get(1)`, `Get(2)` each return their respective errors
+
+#### Scenario: Error message includes failed count · `code-based` · `important`
+- **WHEN** 2 of 5 loaders fail
+- **THEN** the error returned by `LoadAll()` indicates "2/5" or equivalent count information
+
+### REQ-CSYNC-005: Thread Safety
+
+`LazySlice` MUST be safe for concurrent use. Running tests with `-race` MUST produce zero data race reports. Internal state (result slots, error slots) MUST be written only by the owning goroutine and read only after `LoadAll()` returns.
+
+#### Scenario: No data races under race detector · `code-based` · `critical`
+- **WHEN** `go test -race ./internal/csync/...` is executed
+- **THEN** the race detector reports zero warnings
+
+#### Scenario: Concurrent LoadAll calls on different instances · `code-based` · `important`
+- **WHEN** two `LazySlice` instances call `LoadAll()` concurrently from separate goroutines
+- **THEN** both complete without data races and return correct results
+
+### REQ-CSYNC-006: Zero Goroutine Leak
+
+`LoadAll()` MUST NOT leak goroutines regardless of loader outcomes. All goroutines spawned by `LoadAll()` MUST have exited by the time `LoadAll()` returns. This applies to normal completion, partial errors, and loader panics.
+
+#### Scenario: No leak on success · `code-based` · `critical`
+- **WHEN** `LoadAll()` completes with all loaders succeeding
+- **THEN** `runtime.NumGoroutine()` after `LoadAll()` returns is equal to or less than the count before `LoadAll()` was called (within a small delta for runtime goroutines)
+
+#### Scenario: No leak on partial failure · `code-based` · `critical`
+- **WHEN** `LoadAll()` completes with some loaders returning errors
+- **THEN** goroutine count returns to baseline after `LoadAll()` returns
+
+#### Scenario: Loader panic recovery · `code-based` · `critical`
+- **WHEN** a loader function panics during `LoadAll()`
+- **THEN** the panic is recovered, the corresponding `Get(i)` returns an error containing the panic value, other loaders complete normally, and no goroutine leaks
+
+#### Scenario: No leak on empty slice · `code-based` · `important`
+- **WHEN** `LoadAll()` is called on a `LazySlice` with 0 loaders
+- **THEN** no goroutines are spawned
+
+---
+
+## Domain 2: events (Broker)
+
+Package `internal/events` provides an in-process pub/sub broker that decouples side effects (metrics recording, cache saving, stderr output) from the assembly hot path. Fixes the metrics.json race in `AssembleConcurrent` by serializing all event-driven writes through a single dispatch path.
+
+### REQ-EVENTS-001: Broker Type with Subscribe and Emit
+
+`Broker` MUST provide `Subscribe(eventType string, handler func(Event))` for registering handlers and `Emit(event Event)` for dispatching. `Event` MUST be an interface or struct carrying at minimum `Type() string` for dispatch routing.
+
+#### Scenario: Subscribe and emit single event · `code-based` · `critical`
+- **WHEN** a handler is subscribed to "PhaseAssembled" and an event of type "PhaseAssembled" is emitted
+- **THEN** the handler is called exactly once with the emitted event
+
+#### Scenario: Multiple subscribers for same event type · `code-based` · `critical`
+- **WHEN** two handlers are subscribed to "CacheHit" and a "CacheHit" event is emitted
+- **THEN** both handlers are called exactly once each
+
+#### Scenario: Handler not called for non-matching event type · `code-based` · `important`
+- **WHEN** a handler is subscribed to "CacheHit" and a "CacheMiss" event is emitted
+- **THEN** the handler is not called
+
+#### Scenario: No subscribers for event type · `code-based` · `important`
+- **WHEN** an event is emitted with no subscribers registered for its type
+- **THEN** `Emit` completes without error and does not panic
+
+### REQ-EVENTS-002: Event Types
+
+The following typed event structs MUST be defined, each satisfying the `Event` interface:
+
+- `PhaseAssembled` — emitted after `Assemble()` completes (cache hit or fresh assembly). MUST carry: phase name, byte count, token estimate, cached flag, duration.
+- `CacheHit` — emitted when `tryCachedContext` returns cached content. MUST carry: phase name, byte count.
+- `CacheMiss` — emitted when `tryCachedContext` returns no cached content. MUST carry: phase name.
+- `ArtifactPromoted` — emitted when `runWrite()` promotes a pending artifact. MUST carry: change name, phase name, promoted file path.
+- `StateAdvanced` — emitted when `runWrite()` advances the state machine. MUST carry: change name, from-phase, to-phase.
+
+#### Scenario: PhaseAssembled carries required fields · `code-based` · `critical`
+- **WHEN** `Assemble()` completes for the "review" phase
+- **THEN** the emitted `PhaseAssembled` event has `Phase == "review"`, `Bytes > 0`, `Tokens > 0`, `DurationMs >= 0`, and `Cached` is a valid boolean
+
+#### Scenario: CacheHit carries byte count · `code-based` · `important`
+- **GIVEN** a cached context exists for the "spec" phase
+- **WHEN** `Assemble()` is called for "spec"
+- **THEN** a `CacheHit` event is emitted with `Phase == "spec"` and `Bytes > 0`
+
+#### Scenario: CacheMiss emitted on fresh assembly · `code-based` · `important`
+- **GIVEN** no cached context exists for the "explore" phase
+- **WHEN** `Assemble()` is called for "explore"
+- **THEN** a `CacheMiss` event is emitted with `Phase == "explore"`
+
+#### Scenario: ArtifactPromoted carries promoted path · `code-based` · `critical`
+- **WHEN** `runWrite()` promotes a pending artifact for the "design" phase
+- **THEN** an `ArtifactPromoted` event is emitted with the promoted file path
+
+#### Scenario: StateAdvanced carries phase transition · `code-based` · `critical`
+- **WHEN** `runWrite()` advances state from "design" to "tasks"
+- **THEN** a `StateAdvanced` event is emitted with `FromPhase == "design"` and `ToPhase == "tasks"`
+
+### REQ-EVENTS-003: Subscriber Panic Recovery
+
+A panicking subscriber MUST NOT crash the CLI process. `Emit()` MUST wrap each subscriber call in `defer recover()`. The panic SHOULD be logged to stderr. Other subscribers for the same event MUST still execute.
+
+#### Scenario: Panicking subscriber does not crash · `code-based` · `critical`
+- **WHEN** a subscriber panics during `Emit()`
+- **THEN** `Emit()` completes without propagating the panic to the caller
+
+#### Scenario: Other subscribers still execute after panic · `code-based` · `critical`
+- **GIVEN** three subscribers for "PhaseAssembled" where the second panics
+- **WHEN** a "PhaseAssembled" event is emitted
+- **THEN** the first and third subscribers are called; only the second's execution is interrupted
+
+#### Scenario: Panic message logged to stderr · `code-based` · `important`
+- **WHEN** a subscriber panics with message "oops"
+- **THEN** stderr output contains "oops" or equivalent diagnostic information
+
+### REQ-EVENTS-004: Serialized Dispatch
+
+`Emit()` MUST serialize subscriber dispatch so that concurrent `Emit()` calls from different goroutines (as in `AssembleConcurrent`) do not cause data races in subscriber state. This fixes the current race where two goroutines in `AssembleConcurrent` concurrently call `recordMetrics()` which reads, modifies, and writes `metrics.json`.
+
+#### Scenario: Concurrent emits do not race · `code-based` · `critical`
+- **WHEN** 10 goroutines each call `Emit()` simultaneously, each targeting a subscriber that writes to a shared counter
+- **THEN** `go test -race` reports zero data races, and the final counter value equals 10
+
+#### Scenario: Serialized dispatch preserves ordering within single goroutine · `code-based` · `important`
+- **WHEN** a single goroutine emits events A then B in sequence
+- **THEN** the subscriber for A completes before the subscriber for B begins
+
+#### Scenario: Metrics.json not corrupted under concurrent assembly · `code-based` · `critical`
+- **GIVEN** `recordMetrics` is wired as an event subscriber
+- **WHEN** `AssembleConcurrent` runs spec and design phases in parallel, each emitting `PhaseAssembled`
+- **THEN** `metrics.json` contains valid JSON with entries for both phases and no data loss
+
+### REQ-EVENTS-005: Nil-Safe Broker
+
+A nil `*Broker` MUST be safe to call `Emit()` on. This allows callers (e.g., `Assemble()`, `runWrite()`) to emit events without nil-checking, and allows tests that don't set a broker to continue working.
+
+#### Scenario: Nil broker emit is no-op · `code-based` · `critical`
+- **WHEN** `Emit()` is called on a nil `*Broker`
+- **THEN** the call returns immediately without panic
+
+#### Scenario: Nil broker subscribe is no-op · `code-based` · `important`
+- **WHEN** `Subscribe()` is called on a nil `*Broker`
+- **THEN** the call returns immediately without panic
+
+#### Scenario: Existing tests pass without broker · `code-based` · `critical`
+- **GIVEN** `Params.Broker` is not set (zero value nil)
+- **WHEN** `Assemble()` is called
+- **THEN** assembly completes successfully, no panic, no events emitted
+
+### REQ-EVENTS-006: Integration with Assemble and runWrite
+
+`Assemble()` in `context.go` MUST emit `CacheHit` or `CacheMiss` and `PhaseAssembled` events via the broker on `Params`. `runWrite()` in `commands.go` MUST emit `ArtifactPromoted` and `StateAdvanced` events. The broker MUST be injected via a new `Broker *events.Broker` field on `Params`.
+
+#### Scenario: Assemble emits CacheHit on cached context · `code-based` · `critical`
+- **GIVEN** a valid cached context exists for the "propose" phase
+- **WHEN** `Assemble()` is called with a broker that records events
+- **THEN** the recorder contains exactly one `CacheHit` and one `PhaseAssembled` event for "propose"
+
+#### Scenario: Assemble emits CacheMiss on fresh assembly · `code-based` · `critical`
+- **GIVEN** no cached context for the "explore" phase
+- **WHEN** `Assemble()` is called with a broker that records events
+- **THEN** the recorder contains exactly one `CacheMiss` and one `PhaseAssembled` event for "explore"
+
+#### Scenario: runWrite emits both events · `code-based` · `critical`
+- **WHEN** `runWrite()` successfully promotes and advances for the "spec" phase
+- **THEN** the broker has received one `ArtifactPromoted` and one `StateAdvanced` event
+
+#### Scenario: Broker field on Params is backward compatible · `code-based` · `critical`
+- **WHEN** `Params{}` is constructed without setting the `Broker` field
+- **THEN** the zero-value `Broker` field is nil, and `Assemble()` skips event emission
+
+---
+
+## Domain 3: pprof (Profiling Gate)
+
+An environment-variable-gated profiling hook in `cmd/sdd/main.go` that enables CPU and heap profiling to file. Zero overhead when unset.
+
+### REQ-PPROF-001: SDD_PPROF Environment Variable
+
+The `main()` function MUST check `os.Getenv("SDD_PPROF")` before calling `cli.Run()`. Recognized values: `"cpu"`, `"mem"`, `"all"`. Any other non-empty value SHOULD be treated as unrecognized and logged to stderr as a warning. Empty or unset MUST result in no profiling and zero overhead.
+
+#### Scenario: SDD_PPROF=cpu enables CPU profiling · `code-based` · `critical`
+- **GIVEN** `SDD_PPROF` is set to `"cpu"`
+- **WHEN** `sdd` runs and exits
+- **THEN** `sdd-cpu.prof` is created in the current working directory
+
+#### Scenario: SDD_PPROF=mem enables memory profiling · `code-based` · `critical`
+- **GIVEN** `SDD_PPROF` is set to `"mem"`
+- **WHEN** `sdd` runs and exits
+- **THEN** `sdd-mem.prof` is created in the current working directory
+
+#### Scenario: SDD_PPROF=all enables both profiles · `code-based` · `critical`
+- **GIVEN** `SDD_PPROF` is set to `"all"`
+- **WHEN** `sdd` runs and exits
+- **THEN** both `sdd-cpu.prof` and `sdd-mem.prof` are created in the current working directory
+
+#### Scenario: SDD_PPROF unset means no profiling · `code-based` · `critical`
+- **GIVEN** `SDD_PPROF` is not set
+- **WHEN** `sdd` runs and exits
+- **THEN** no `sdd-cpu.prof` or `sdd-mem.prof` files are created
+
+#### Scenario: Unrecognized value warns · `code-based` · `important`
+- **GIVEN** `SDD_PPROF` is set to `"trace"`
+- **WHEN** `sdd` runs
+- **THEN** stderr contains a warning about the unrecognized value, and no profiling is enabled
+
+### REQ-PPROF-002: Profile File Output
+
+CPU profile MUST be written to `sdd-cpu.prof` and heap profile to `sdd-mem.prof`, both in the current working directory. These follow the CWD convention established by the crash log in `main.go` (line 17: `.sdd-crash-{ts}.log`).
+
+#### Scenario: CPU profile is valid pprof format · `code-based` · `critical`
+- **GIVEN** `SDD_PPROF=cpu` and `sdd` has completed execution
+- **WHEN** `go tool pprof sdd-cpu.prof` is invoked
+- **THEN** the tool loads the profile without errors
+
+#### Scenario: Heap profile is valid pprof format · `code-based` · `critical`
+- **GIVEN** `SDD_PPROF=mem` and `sdd` has completed execution
+- **WHEN** `go tool pprof sdd-mem.prof` is invoked
+- **THEN** the tool loads the profile without errors
+
+#### Scenario: Profile file is written even on CLI error · `code-based` · `important`
+- **GIVEN** `SDD_PPROF=cpu`
+- **WHEN** `sdd` exits with a non-zero exit code due to a CLI error
+- **THEN** `sdd-cpu.prof` is still written (profiling stop is in a `defer`)
+
+#### Scenario: Profile file overwrite on re-run · `code-based` · `important`
+- **GIVEN** `sdd-cpu.prof` already exists from a previous run
+- **WHEN** `sdd` runs again with `SDD_PPROF=cpu`
+- **THEN** `sdd-cpu.prof` is overwritten with the new profile data
+
+### REQ-PPROF-003: Zero Overhead When Unset
+
+When `SDD_PPROF` is not set or empty, the profiling gate MUST NOT call any `runtime/pprof` functions, MUST NOT open any files, and MUST NOT allocate profiling-related buffers. The check MUST be a single `os.Getenv` call with an early return.
+
+#### Scenario: No pprof imports executed when unset · `code-based` · `critical`
+- **GIVEN** `SDD_PPROF` is not set
+- **WHEN** `main()` executes
+- **THEN** no `pprof.StartCPUProfile`, `pprof.WriteHeapProfile`, or `os.Create` calls for profile files occur
+
+#### Scenario: Startup latency unaffected · `code-based` · `important`
+- **GIVEN** `SDD_PPROF` is not set
+- **WHEN** `sdd version` is timed over 10 runs
+- **THEN** mean execution time does not increase by more than 1ms compared to baseline (within measurement noise)
+
+### REQ-PPROF-004: Doctor Check for Pprof
+
+`sdd doctor` MUST include a check that reports the current `SDD_PPROF` value if set, or "not set (no profiling)" if unset. This is informational only and SHOULD always return status "pass" (never "fail").
+
+#### Scenario: Doctor reports SDD_PPROF when set · `code-based` · `important`
+- **GIVEN** `SDD_PPROF=cpu`
+- **WHEN** `sdd doctor` runs
+- **THEN** output includes a check named "pprof" with status "pass" and message indicating `SDD_PPROF=cpu`
+
+#### Scenario: Doctor reports pprof not set · `code-based` · `important`
+- **GIVEN** `SDD_PPROF` is not set
+- **WHEN** `sdd doctor` runs
+- **THEN** output includes a check named "pprof" with status "pass" and message "not set (no profiling)" or equivalent
+
+---
+
+## Eval Definitions
+
+| Scenario | Eval Type | Criticality | Threshold |
+|----------|-----------|-------------|-----------|
+| Construction with loaders | unit test | critical | PASS |
+| Construction with empty slice | unit test | critical | PASS |
+| Construction with nil slice | unit test | critical | PASS |
+| Goroutine bound respected | unit test | critical | PASS |
+| Goroutine bound on low-core machine | unit test | important | PASS |
+| Fewer loaders than bound | unit test | important | PASS |
+| All loaders complete successfully | unit test | critical | PASS |
+| Result ordering matches input ordering | unit test | critical | PASS |
+| LoadAll on empty slice | unit test | important | PASS |
+| Partial failure | unit test | critical | PASS |
+| All loaders fail | unit test | important | PASS |
+| Error message includes failed count | unit test | important | PASS |
+| No data races under race detector | unit test + race | critical | PASS |
+| Concurrent LoadAll calls on different instances | unit test + race | important | PASS |
+| No leak on success | unit test | critical | goroutine delta <= 2 |
+| No leak on partial failure | unit test | critical | goroutine delta <= 2 |
+| Loader panic recovery | unit test | critical | PASS |
+| No leak on empty slice | unit test | important | PASS |
+| Subscribe and emit single event | unit test | critical | PASS |
+| Multiple subscribers for same event type | unit test | critical | PASS |
+| Handler not called for non-matching event type | unit test | important | PASS |
+| No subscribers for event type | unit test | important | PASS |
+| PhaseAssembled carries required fields | integration test | critical | PASS |
+| CacheHit carries byte count | integration test | important | PASS |
+| CacheMiss emitted on fresh assembly | integration test | important | PASS |
+| ArtifactPromoted carries promoted path | integration test | critical | PASS |
+| StateAdvanced carries phase transition | integration test | critical | PASS |
+| Panicking subscriber does not crash | unit test | critical | PASS |
+| Other subscribers still execute after panic | unit test | critical | PASS |
+| Panic message logged to stderr | unit test | important | PASS |
+| Concurrent emits do not race | unit test + race | critical | PASS |
+| Serialized dispatch preserves ordering | unit test | important | PASS |
+| Metrics.json not corrupted under concurrent assembly | integration test + race | critical | valid JSON |
+| Nil broker emit is no-op | unit test | critical | PASS |
+| Nil broker subscribe is no-op | unit test | important | PASS |
+| Existing tests pass without broker | integration test | critical | PASS |
+| Assemble emits CacheHit on cached context | integration test | critical | PASS |
+| Assemble emits CacheMiss on fresh assembly | integration test | critical | PASS |
+| runWrite emits both events | integration test | critical | PASS |
+| Broker field on Params is backward compatible | unit test | critical | PASS |
+| SDD_PPROF=cpu enables CPU profiling | integration test | critical | file exists |
+| SDD_PPROF=mem enables memory profiling | integration test | critical | file exists |
+| SDD_PPROF=all enables both profiles | integration test | critical | files exist |
+| SDD_PPROF unset means no profiling | integration test | critical | files absent |
+| Unrecognized value warns | integration test | important | stderr contains warning |
+| CPU profile is valid pprof format | integration test | critical | pprof loads |
+| Heap profile is valid pprof format | integration test | critical | pprof loads |
+| Profile file is written even on CLI error | integration test | important | file exists |
+| Profile file overwrite on re-run | integration test | important | file modified time changes |
+| No pprof imports executed when unset | code review | critical | PASS |
+| Startup latency unaffected | benchmark | important | delta < 1ms |
+| Doctor reports SDD_PPROF when set | integration test | important | PASS |
+| Doctor reports pprof not set | integration test | important | PASS |
+
+## Acceptance Criteria Summary
+
+| Requirement ID | Type | Priority | Scenarios |
+|----------------|------|----------|-----------|
+| REQ-CSYNC-001 | Functional | P0 | Construction with loaders, Construction with empty slice, Construction with nil slice |
+| REQ-CSYNC-002 | Performance | P0 | Goroutine bound respected, Goroutine bound on low-core machine, Fewer loaders than bound |
+| REQ-CSYNC-003 | Functional | P0 | All loaders complete successfully, Result ordering matches input ordering, LoadAll on empty slice |
+| REQ-CSYNC-004 | Functional | P0 | Partial failure, All loaders fail, Error message includes failed count |
+| REQ-CSYNC-005 | Non-functional | P0 | No data races under race detector, Concurrent LoadAll calls on different instances |
+| REQ-CSYNC-006 | Reliability | P0 | No leak on success, No leak on partial failure, Loader panic recovery, No leak on empty slice |
+| REQ-EVENTS-001 | Functional | P0 | Subscribe and emit single event, Multiple subscribers for same event type, Handler not called for non-matching event type, No subscribers for event type |
+| REQ-EVENTS-002 | Functional | P0 | PhaseAssembled carries required fields, CacheHit carries byte count, CacheMiss emitted on fresh assembly, ArtifactPromoted carries promoted path, StateAdvanced carries phase transition |
+| REQ-EVENTS-003 | Reliability | P0 | Panicking subscriber does not crash, Other subscribers still execute after panic, Panic message logged to stderr |
+| REQ-EVENTS-004 | Non-functional | P0 | Concurrent emits do not race, Serialized dispatch preserves ordering, Metrics.json not corrupted under concurrent assembly |
+| REQ-EVENTS-005 | Reliability | P0 | Nil broker emit is no-op, Nil broker subscribe is no-op, Existing tests pass without broker |
+| REQ-EVENTS-006 | Integration | P0 | Assemble emits CacheHit on cached context, Assemble emits CacheMiss on fresh assembly, runWrite emits both events, Broker field on Params is backward compatible |
+| REQ-PPROF-001 | Functional | P0 | SDD_PPROF=cpu enables CPU profiling, SDD_PPROF=mem enables memory profiling, SDD_PPROF=all enables both profiles, SDD_PPROF unset means no profiling, Unrecognized value warns |
+| REQ-PPROF-002 | Functional | P0 | CPU profile is valid pprof format, Heap profile is valid pprof format, Profile file is written even on CLI error, Profile file overwrite on re-run |
+| REQ-PPROF-003 | Performance | P1 | No pprof imports executed when unset, Startup latency unaffected |
+| REQ-PPROF-004 | Informational | P2 | Doctor reports SDD_PPROF when set, Doctor reports pprof not set |
+

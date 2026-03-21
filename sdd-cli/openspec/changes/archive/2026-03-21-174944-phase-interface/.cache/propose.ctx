@@ -1,0 +1,714 @@
+
+--- SKILL ---
+
+---
+name: sdd-propose
+description: >
+  Create a change proposal from exploration analysis. Produces proposal.md with intent, scope, approach, risks, and rollback plan.
+  Trigger: When user runs /sdd-new or after sdd-explore completes successfully.
+license: MIT
+metadata:
+  version: "1.0"
+---
+
+# SDD Propose
+
+You are executing the **propose** phase inline. A proposal is the human-readable contract that must be approved before any specifications, design, or implementation work begins. It captures the WHAT, WHY, and high-level HOW of a change.
+
+## Activation
+
+User runs `/sdd-new <change-name> "<intent>"`. The change name must be kebab-case. Reads `openspec/changes/{changeName}/exploration.md` if it exists.
+
+## Execution Steps
+
+### Step 1: Load Project Context
+
+1. Read `openspec/config.yaml` for:
+   - Project stack and architecture
+   - Coding conventions and constraints
+   - Required proposal sections (from `phases.proposal.required_sections`)
+2. If `config.yaml` does not exist, return `status: error` recommending `sdd-init` first.
+
+### Step 2: Load Exploration Results
+
+1. If `exploration_path` is provided, read the `exploration.md` file.
+2. If `exploration_data` is provided, use the inline data.
+3. If neither is provided:
+   - Check if `openspec/changes/{change_name}/exploration.md` exists (may have been created by a prior explore phase).
+   - If not found, proceed without exploration data but add a warning that the proposal may lack depth.
+4. Extract from exploration:
+   - Current state summary
+   - Relevant files and their purposes
+   - Risk assessment
+   - Recommended approach
+   - Open questions
+
+### Step 2b: Requirement Clarification Gate
+
+This step ensures that critical ambiguities are resolved before writing the proposal. It prevents building proposals on assumptions that could invalidate the entire approach.
+
+#### 2b-1. Check for BLOCKING Questions
+
+1. If exploration data is available, read the `blocking_questions` field (or the "Clarification Required (BLOCKING)" section of exploration.md).
+2. If no exploration data is available, perform lightweight ambiguity detection on the `intent`:
+
+| Check | Trigger | Example |
+|---|---|---|
+| Vague scope | Intent uses words like "improve", "refactor", "fix" without specifics | "Improve the dashboard" — improve what? performance? UX? data accuracy? |
+| Multiple interpretations | Intent could lead to fundamentally different approaches | "Add notifications" — email? push? in-app? all three? |
+| Missing constraints | Intent doesn't specify boundaries that affect architecture | "Support multiple users" — how many? 10 or 10 million? |
+| Undefined integration | Intent references external systems without details | "Connect to payment provider" — which one? what API version? |
+
+3. Generate any new BLOCKING questions found that weren't in the exploration.
+
+#### 2b-2. Evaluate Clarification Status
+
+Three possible states:
+
+**State A: No BLOCKING questions** → Proceed to Step 3.
+
+**State B: BLOCKING questions exist AND `clarification_answers` provided** → Validate that every BLOCKING question has a corresponding answer. If any answer is missing or unclear, add it to the questions list and return `needs_clarification`. Otherwise, incorporate answers into the proposal context and proceed to Step 3.
+
+**State C: BLOCKING questions exist AND NO `clarification_answers`** → Return early with:
+
+```yaml
+phase: propose
+status: needs_clarification
+data:
+  change_name: <string>
+  blocking_questions:
+    - question: <specific question>
+      why_it_matters: <consequence>
+      options:
+        - label: "A"
+          description: <option>
+          consequence: <result>
+        - label: "B"
+          description: <option>
+          consequence: <result>
+      recommendation: <default if forced to choose>
+  deferred_questions:
+    - <string>
+  message: "Cannot write proposal — {N} blocking question(s) require your input. Please answer and re-invoke."
+```
+
+Present these questions to the user. When they provide answers, re-run `/sdd-new` with the answers incorporated.
+
+#### 2b-3. Incorporate Answers
+
+When `clarification_answers` are provided:
+1. Use the answers to resolve approach decisions, scope boundaries, and constraints.
+2. Reference the answers explicitly in the proposal (e.g., in Key Decisions: "Per user clarification: using WebSocket over SSE for real-time updates").
+3. If an answer creates new questions (rare), classify them. New BLOCKING questions trigger another `needs_clarification` return (max 2 clarification rounds to prevent fatigue).
+
+### Step 3: Validate Change Name
+
+1. Ensure `change_name` is kebab-case (lowercase, hyphens, no spaces).
+2. Check if `openspec/changes/{change_name}/` already exists:
+   - If `proposal.md` exists, return `status: error` with message "Proposal already exists. Use sdd-continue to proceed or choose a different change name."
+   - If directory exists but no `proposal.md`, it is safe to proceed (exploration may have been written).
+
+### Step 4: Assess Change Size
+
+Determine the change size based on exploration data and intent:
+
+| Size   | Criteria                                          | Recommendation           |
+|--------|---------------------------------------------------|--------------------------|
+| Small  | 1-3 files modified, no new dependencies, no DB    | Single proposal is fine  |
+| Medium | 4-10 files, may add dependencies, minor DB change | Single proposal is fine  |
+| Large  | 10+ files, new dependencies, DB migration, new API| Recommend splitting      |
+
+If the change is **large** and `size_hint` was not explicitly set to `large`:
+- Include a warning in the proposal recommending it be split into smaller changes
+- Suggest concrete split points (e.g., "Phase 1: Add database schema, Phase 2: Add API endpoints, Phase 3: Add UI")
+
+### Step 5: Create Change Directory
+
+Create `openspec/changes/{change_name}/` if it does not already exist.
+
+### Step 6: Write proposal.md
+
+Write `openspec/changes/{change_name}/proposal.md` with the following required sections:
+
+```markdown
+# Proposal: {Change Name (title case)}
+
+**Change ID**: {change_name}
+**Date**: {ISO 8601 timestamp}
+**Status**: draft
+
+---
+
+## Intent
+
+{What is being changed and why, in 1-3 sentences. Focus on the problem being solved and the value delivered. Do not describe implementation details here.}
+
+## Scope
+
+### In Scope
+
+- {Specific deliverable 1}
+- {Specific deliverable 2}
+- {Specific deliverable 3}
+
+### Out of Scope
+
+- {Explicitly excluded item 1 -- and brief reason why}
+- {Explicitly excluded item 2 -- and brief reason why}
+
+## Approach
+
+{High-level strategy for implementing this change. 1-2 paragraphs describing the overall approach without getting into file-level details. Reference the recommended approach from exploration if available.}
+
+### Key Decisions
+
+| Decision                | Choice            | Rationale                          |
+|-------------------------|-------------------|------------------------------------|
+| {Decision point 1}     | {Chosen approach} | {Why this was chosen}              |
+| {Decision point 2}     | {Chosen approach} | {Why this was chosen}              |
+
+## Affected Areas
+
+| Module / Area           | File Path                        | Change Type     | Risk Level |
+|-------------------------|----------------------------------|-----------------|------------|
+| {Module name}           | {absolute file path}             | create/modify/delete | low/medium/high |
+| {Module name}           | {absolute file path}             | create/modify/delete | low/medium/high |
+
+**Total files affected**: {count}
+**New files**: {count}
+**Modified files**: {count}
+**Deleted files**: {count}
+
+## Risks
+
+| Risk                    | Probability | Impact  | Mitigation                         |
+|-------------------------|-------------|---------|------------------------------------|
+| {Risk description}      | low/medium/high | low/medium/high | {How to prevent or handle this} |
+| {Risk description}      | low/medium/high | low/medium/high | {How to prevent or handle this} |
+
+**Overall Risk Level**: {low | medium | high}
+
+## Rollback Plan
+
+{MANDATORY section. Describe exactly how to undo this change if something goes wrong.}
+
+### Steps to Rollback
+
+1. {Specific step 1 with git command or file operation}
+2. {Specific step 2}
+3. {Specific step 3}
+
+### Rollback Verification
+
+- {How to verify the rollback was successful}
+- {What state the system should be in after rollback}
+
+## Dependencies
+
+### Internal Dependencies
+
+- {Module or file that must exist/be modified first}
+
+### External Dependencies
+
+| Package              | Version  | Purpose                    | Already Installed |
+|----------------------|----------|----------------------------|-------------------|
+| {package-name}       | {semver} | {why it is needed}         | yes/no            |
+
+### Infrastructure Dependencies
+
+- {Database migration needed: yes/no}
+- {New environment variables: list or none}
+- {New services: list or none}
+
+## Success Criteria
+
+All of the following must be true for this change to be considered complete:
+
+- [ ] {Measurable criterion 1, e.g., "All new endpoints return typed responses with proper error handling"}
+- [ ] {Measurable criterion 2, e.g., "Unit tests cover all new functions with >80% branch coverage"}
+- [ ] {Measurable criterion 3, e.g., "Project's build/typecheck command passes with zero errors"}
+- [ ] {Measurable criterion 4, e.g., "Project's lint command passes with zero warnings"}
+- [ ] {Measurable criterion 5, e.g., "No type-system escape hatches or compiler suppressions in new code"}
+- [ ] {Measurable criterion 6, e.g., "Rollback plan tested and verified"}
+
+## Open Questions
+
+{List any unresolved questions from exploration or new questions raised during proposal writing. These MUST be answered before moving to the spec phase.}
+
+- {Question 1}
+- {Question 2}
+
+---
+
+**Next Step**: Review and approve this proposal, then run `sdd-spec` and `sdd-design` (can run in parallel).
+```
+
+### Step 7: Validate Proposal Completeness
+
+Before returning, validate that the proposal has:
+
+1. **Intent** -- not empty, not just restating the change name
+2. **Scope** -- both in-scope AND out-of-scope items listed
+3. **Approach** -- at least one key decision with rationale
+4. **Affected Areas** -- at least one file path (absolute, not relative)
+5. **Risks** -- at least one risk identified (every change has risks)
+6. **Rollback Plan** -- contains specific steps (not "revert the commit")
+7. **Dependencies** -- section present even if empty ("None" is acceptable)
+8. **Success Criteria** -- at least 3 measurable criteria including type safety and test passing
+
+If any section is missing or inadequate, add it with a `[TODO]` marker and include a warning in the summary output.
+
+### Step 8: Present Summary
+
+Present a markdown summary to the user, then STOP. Do not proceed automatically.
+
+If blocking clarification questions exist (status: PARTIAL), output the questions and stop — do not write `proposal.md` until answers are provided.
+
+**On success, output:**
+
+```markdown
+## SDD Propose: {change_name}
+
+**Size**: {small | medium | large}  |  **Risk**: {low | medium | high}  |  **Files affected**: {N}
+
+### Proposal Written
+`openspec/changes/{change_name}/proposal.md`
+
+### Scope
+- **In scope**: {N} items
+- **Out of scope**: {N} items explicitly excluded
+
+### Key Decisions
+{decision table summary — 1-2 rows}
+
+{If open questions: ### Open Questions ({N})\n{questions list}\n}
+{If warnings: ### ⚠ Warnings\n{warnings list}\n}
+{If large change: ### ⚠ Size Warning\nThis change is large. Consider splitting into: {split suggestions}\n}
+
+**Next step**: Review `openspec/changes/{change_name}/proposal.md`. When satisfied, run `/sdd-spec` and `/sdd-design` (these can run in parallel, each in its own session).
+```
+
+**On PARTIAL (blocking questions):**
+
+```markdown
+## SDD Propose: Clarification Needed
+
+Cannot write proposal — {N} blocking question(s) require your input.
+
+### Q1: {specific question}
+- **Why it matters**: {consequence}
+- **Options**: A: {option} → {consequence} | B: {option} → {consequence}
+- **Recommendation**: {default}
+
+Re-run `/sdd-new {change_name} "<intent>"` after answering.
+```
+
+## Rules and Constraints
+
+1. **The proposal is a HUMAN-READABLE document** for review and approval. Write clearly, not in code-speak.
+2. **Rollback Plan is NEVER optional.** Every change must be reversible. If it truly cannot be rolled back (e.g., destructive database migration), state that explicitly with mitigation.
+3. **Scope must explicitly state what is OUT of scope.** This prevents scope creep and miscommunication.
+4. **Success criteria must be verifiable.** Not "code works well" but "all tests pass, no type errors, API returns 200 for valid input."
+5. **If the change is too large** (10+ files, multiple domains), recommend splitting with concrete split suggestions.
+6. **All file paths must be absolute.** Never use relative paths in the affected areas table.
+7. **Never modify source code.** The proposal phase only writes to `openspec/changes/{change_name}/`.
+8. **Never skip risk assessment.** Even "simple" changes have risks (regression, performance, compatibility).
+9. **Reference exploration data** when available. The proposal should build on exploration findings, not ignore them.
+10. **Open questions must be answerable.** Not "will this work?" but "should we use WebSocket or SSE for real-time updates?"
+11. **Respect project conventions** from `config.yaml` and `CLAUDE.md`. Success criteria must include type safety and error handling checks consistent with the project's rules.
+12. **Do not prescribe implementation details.** The proposal says WHAT and WHY, not exactly HOW at the code level. That is the design phase's job.
+
+## Error Handling
+
+- If `openspec/config.yaml` does not exist: return `status: error` with message "Run sdd-init first."
+- If `change_name` is not kebab-case: return `status: error` with corrected suggestion.
+- If `proposal.md` already exists: return `status: error` with guidance to use sdd-continue.
+- If intent is empty or not provided: return `status: error` requesting intent description.
+- All errors include the phase name (`propose`) and a human-readable message.
+
+## PARCER Contract
+
+```yaml
+phase: propose
+preconditions:
+  - exploration.md exists at openspec/changes/{changeName}/
+postconditions:
+  - proposal.md written with all required_sections from config.yaml phases.proposal
+  - proposal.md contains change size and risk level assessment
+  - proposal.md written with all required sections, or clarification questions presented
+```
+
+
+--- CHANGE ---
+
+Name: phase-interface
+Description: Define a Phase interface that makes phases pluggable, self-documenting, and testable. Custom phases can be added without modifying the core state machine. Refactor existing phase assemblers to implement the interface.
+
+--- PROJECT ---
+
+Project: sdd-cli
+Language: go
+Build Tool: go
+Manifests: go.mod
+
+--- FILE TREE ---
+
+Makefile
+bin/sdd
+cmd/sdd/main.go
+go.mod
+go.sum
+internal/artifacts/artifacts.go
+internal/artifacts/artifacts_test.go
+internal/artifacts/list.go
+internal/artifacts/promote.go
+internal/artifacts/reader.go
+internal/artifacts/writer.go
+internal/cli/cli.go
+internal/cli/cli_test.go
+internal/cli/commands.go
+internal/cli/doctor.go
+internal/cli/errs/errs.go
+internal/cli/errs/errs_test.go
+internal/cli/integration_test.go
+internal/cli/verbosity.go
+internal/cli/verbosity_test.go
+internal/config/config.go
+internal/config/config_test.go
+internal/config/fuzz_test.go
+internal/config/init.go
+internal/config/init_test.go
+internal/config/types.go
+internal/context/apply.go
+internal/context/cache.go
+internal/context/clean.go
+internal/context/context.go
+internal/context/context_test.go
+internal/context/design.go
+internal/context/explore.go
+internal/context/fuzz_test.go
+internal/context/propose.go
+internal/context/review.go
+internal/context/spec.go
+internal/context/subscribers.go
+internal/context/summary.go
+internal/context/summary_test.go
+internal/context/tasks.go
+internal/csync/lazyslice.go
+internal/csync/lazyslice_test.go
+internal/events/broker.go
+internal/events/broker_test.go
+internal/state/fuzz_test.go
+internal/state/resolve.go
+internal/state/resolve_test.go
+internal/state/state.go
+internal/state/state_test.go
+internal/state/types.go
+internal/state/types_test.go
+internal/verify/archive.go
+internal/verify/verify.go
+internal/verify/verify_test.go
+openspec/changes/archive/2026-03-20-181906-add-diff-command/archive-manifest.md
+openspec/changes/archive/2026-03-20-181906-add-diff-command/clean-report.md
+openspec/changes/archive/2026-03-20-181906-add-diff-command/design.md
+openspec/changes/archive/2026-03-20-181906-add-diff-command/exploration.md
+openspec/changes/archive/2026-03-20-181906-add-diff-command/proposal.md
+openspec/changes/archive/2026-03-20-181906-add-diff-command/review-report.md
+openspec/changes/archive/2026-03-20-181906-add-diff-command/specs/spec.md
+openspec/changes/archive/2026-03-20-181906-add-diff-command/state.json
+openspec/changes/archive/2026-03-20-181906-add-diff-command/tasks.md
+openspec/changes/archive/2026-03-20-181906-add-diff-command/verify-report.md
+openspec/changes/archive/2026-03-20-190624-steipete-patterns/.cache/metrics.json
+openspec/changes/archive/2026-03-20-190624-steipete-patterns/archive-manifest.md
+openspec/changes/archive/2026-03-20-190624-steipete-patterns/clean-report.md
+openspec/changes/archive/2026-03-20-190624-steipete-patterns/design.md
+openspec/changes/archive/2026-03-20-190624-steipete-patterns/exploration.md
+openspec/changes/archive/2026-03-20-190624-steipete-patterns/proposal.md
+openspec/changes/archive/2026-03-20-190624-steipete-patterns/review-report.md
+openspec/changes/archive/2026-03-20-190624-steipete-patterns/specs/spec.md
+openspec/changes/archive/2026-03-20-190624-steipete-patterns/state.json
+openspec/changes/archive/2026-03-20-190624-steipete-patterns/tasks.md
+openspec/changes/archive/2026-03-20-190624-steipete-patterns/verify-report.md
+openspec/changes/archive/2026-03-20-192036-smart-skip/.cache/metrics.json
+openspec/changes/archive/2026-03-20-192036-smart-skip/archive-manifest.md
+openspec/changes/archive/2026-03-20-192036-smart-skip/clean-report.md
+openspec/changes/archive/2026-03-20-192036-smart-skip/design.md
+openspec/changes/archive/2026-03-20-192036-smart-skip/exploration.md
+openspec/changes/archive/2026-03-20-192036-smart-skip/proposal.md
+openspec/changes/archive/2026-03-20-192036-smart-skip/review-report.md
+openspec/changes/archive/2026-03-20-192036-smart-skip/specs/spec.md
+openspec/changes/archive/2026-03-20-192036-smart-skip/state.json
+openspec/changes/archive/2026-03-20-192036-smart-skip/tasks.md
+openspec/changes/archive/2026-03-20-192036-smart-skip/verify-report.md
+openspec/changes/archive/2026-03-20-193534-resilience-patterns/.cache/metrics.json
+openspec/changes/archive/2026-03-20-193534-resilience-patterns/archive-manifest.md
+openspec/changes/archive/2026-03-20-193534-resilience-patterns/clean-report.md
+openspec/changes/archive/2026-03-20-193534-resilience-patterns/design.md
+openspec/changes/archive/2026-03-20-193534-resilience-patterns/exploration.md
+openspec/changes/archive/2026-03-20-193534-resilience-patterns/proposal.md
+openspec/changes/archive/2026-03-20-193534-resilience-patterns/review-report.md
+openspec/changes/archive/2026-03-20-193534-resilience-patterns/specs/spec.md
+openspec/changes/archive/2026-03-20-193534-resilience-patterns/state.json
+openspec/changes/archive/2026-03-20-193534-resilience-patterns/tasks.md
+openspec/changes/archive/2026-03-20-193534-resilience-patterns/verify-report.md
+openspec/changes/concurrency-performance/clean-report.md
+openspec/changes/concurrency-performance/design.md
+openspec/changes/concurrency-performance/exploration.md
+openspec/changes/concurrency-performance/proposal.md
+openspec/changes/concurrency-performance/review-report.md
+openspec/changes/concurrency-performance/specs/spec.md
+openspec/changes/concurrency-performance/state.json
+openspec/changes/concurrency-performance/tasks.md
+openspec/changes/concurrency-performance/verify-report.md
+openspec/config.yaml
+
+--- EXPLORATION ---
+
+# Exploration: phase-interface
+
+**Change:** phase-interface
+**Goal:** Define a Phase interface that makes phases pluggable, self-documenting, and testable. Custom phases can be added without modifying the core state machine.
+
+---
+
+## Current State
+
+The SDD pipeline consists of 10 phases: `explore`, `propose`, `spec`, `design`, `tasks`, `apply`, `review`, `verify`, `clean`, `archive`. Each phase has an assembler function — a free function that takes `(io.Writer, *Params) error` and writes assembled context for an AI sub-agent to consume.
+
+The assembler type alias is already defined:
+
+```go
+// internal/context/context.go
+type Assembler func(w io.Writer, p *Params) error
+```
+
+Dispatch is via a package-level `map[state.Phase]Assembler`:
+
+```go
+var dispatchers = map[state.Phase]Assembler{
+    state.PhaseExplore: AssembleExplore,
+    state.PhasePropose: AssemblePropose,
+    // ... 8 total
+}
+```
+
+Phase metadata (prerequisites, next-phases, artifact filenames) lives in three separate, parallel data structures across two packages:
+
+1. `internal/state/state.go` — `validNextPhases`, `prerequisites` (both `map[Phase][]Phase`)
+2. `internal/artifacts/artifacts.go` — `ArtifactFileName` (`map[state.Phase]string`)
+3. `internal/context/cache.go` — `phaseInputs` (`map[string][]string`), `phaseTTL` (`map[string]time.Duration`)
+
+There is no single authoritative description of a phase. All phase knowledge is scattered across 4 package-level maps.
+
+---
+
+## Relevant Files
+
+| File | Role | Impact |
+|------|------|--------|
+| `internal/context/context.go` | Defines `Assembler` type alias, `Params` struct, `dispatchers` map, `Assemble()`, `AssembleConcurrent()` | Core of refactor |
+| `internal/context/explore.go` | `AssembleExplore` — loads skill + git file tree + manifests | Per-phase assembler |
+| `internal/context/propose.go` | `AssemblePropose` — requires `exploration.md` | Per-phase assembler |
+| `internal/context/spec.go` | `AssembleSpec` — requires `proposal.md` | Per-phase assembler |
+| `internal/context/design.go` | `AssembleDesign` — requires `proposal.md` + `specs/` | Per-phase assembler |
+| `internal/context/tasks.go` | `AssembleTasks` — requires `design.md` + `specs/` | Per-phase assembler |
+| `internal/context/apply.go` | `AssembleApply` — requires `tasks.md`, `design.md`, `specs/`; extracts current task | Per-phase assembler |
+| `internal/context/review.go` | `AssembleReview` — loads git diff, optional project rules | Per-phase assembler |
+| `internal/context/clean.go` | `AssembleClean` — requires `verify-report.md` + `tasks.md` | Per-phase assembler |
+| `internal/context/cache.go` | `phaseInputs`, `phaseTTL`, cache logic | Must be co-located with phase def |
+| `internal/context/subscribers.go` | Wires event broker for metrics, cache persistence | Cross-cutting |
+| `internal/state/types.go` | Defines `Phase` string type, `AllPhases()` ordered slice | State machine core |
+| `internal/state/state.go` | `prerequisites`, `validNextPhases`, `CanTransition`, `Advance`, `Recover` | State machine transitions |
+| `internal/state/resolve.go` | `ResolvePhase` — name/index/prefix resolution | CLI input parsing |
+| `internal/artifacts/artifacts.go` | `ArtifactFileName` map, `PendingFileName()` | Artifact name registry |
+| `internal/cli/commands.go` | `runContext`, `runWrite`, `runNew` — CLI dispatch to assemblers | Consumer of Phase |
+| `internal/context/context_test.go` | Per-assembler unit tests, fixture helper `setupFixture` | Test coverage |
+
+---
+
+## Dependency Map
+
+```
+state.Phase (string type)
+  ├── state.AllPhases() — ordered slice
+  ├── state.prerequisites — map[Phase][]Phase (in state.go)
+  ├── state.validNextPhases — map[Phase][]Phase (in state.go)
+  ├── artifacts.ArtifactFileName — map[Phase]string
+  ├── context.dispatchers — map[Phase]Assembler
+  ├── context.phaseInputs — map[string][]string  (uses string, not Phase!)
+  └── context.phaseTTL — map[string]time.Duration (uses string, not Phase!)
+
+context.Params (inputs to every assembler)
+  ├── ChangeDir string
+  ├── ChangeName string
+  ├── Description string
+  ├── ProjectDir string
+  ├── Config *config.Config
+  ├── SkillsPath string
+  ├── Stderr io.Writer
+  ├── Verbosity int
+  └── Broker *events.Broker
+
+context.Assembler = func(io.Writer, *Params) error
+  ← implemented by 8 AssembleXxx free functions
+
+cli.runContext
+  → state.ReadyPhases()    — from State
+  → context.Assemble()     — dispatches to assembler
+  → context.AssembleConcurrent() — parallel spec+design
+
+cli.runWrite
+  → artifacts.Promote()    — moves .pending file to canonical name
+  → state.Advance()        — marks phase completed
+```
+
+Phases `spec` and `design` are the only ones that can run concurrently (both require `propose` completed, neither requires the other).
+
+---
+
+## Data Flow
+
+### Context assembly (sdd context <name> [phase])
+
+```
+CLI args
+  → state.ResolvePhase(input)
+  → state.ReadyPhases() or explicit phase
+  → context.Assemble(stdout, phase, params)
+      → tryCachedContext(changeDir, phase, skillsPath) → cache hit? write & return
+      → dispatchers[phase](buf, params)
+          → csync.NewLazySlice([loaders...]).LoadAll()
+              → loadSkill(skillsPath, "sdd-<phase>") — SKILL.md
+              → loadArtifact(changeDir, "<artifact>") — required artifacts
+              → [optional loaders: git diff, file tree, project rules]
+          → writeSection(w, "SKILL", ...) + per-phase sections
+      → size guard (> 100KB = error)
+      → write buf to stdout
+      → emit PhaseAssembled event
+          → saveContextCache (subscriber)
+          → recordMetrics (subscriber)
+          → writeMetrics to stderr (subscriber)
+```
+
+### Phase advancement (sdd write <name> <phase>)
+
+```
+CLI args
+  → artifacts.Promote(changeDir, phase) — .pending/<phase>.md → <canonical>
+  → state.Advance(phase)
+      → state.CanTransition(phase) — check prerequisites
+      → s.Phases[phase] = StatusCompleted
+      → s.CurrentPhase = s.nextReady()
+  → state.Save(st, statePath)
+```
+
+### What each assembler reads
+
+| Phase | Required Artifacts | Optional |
+|-------|-------------------|----------|
+| explore | — | git file tree, manifests |
+| propose | `exploration.md` | git file tree |
+| spec | `proposal.md` | buildSummary |
+| design | `proposal.md`, `specs/` | buildSummary |
+| tasks | `design.md`, `specs/` | — |
+| apply | `tasks.md`, `design.md`, `specs/` | buildSummary |
+| review | `specs/`, `design.md`, `tasks.md` | git diff, project rules |
+| clean | `verify-report.md`, `tasks.md` | buildSummary, `design.md`, `specs/` |
+
+Phases `verify` and `archive` have **no assembler** — they are handled outside the context assembly path (`runVerify` runs build/test commands directly; `runArchive` calls `verify.Archive()`).
+
+---
+
+## Risk Assessment
+
+### Low risk
+- The `Assembler` type alias already exists (`func(io.Writer, *Params) error`) — wrapping it in an interface is mechanical.
+- All assembler functions already have identical signatures.
+- Tests call assemblers directly (`AssembleExplore(&buf, p)`) — they would still work after refactoring.
+
+### Medium risk
+- **Four separate maps must stay in sync.** `prerequisites`, `ArtifactFileName`, `phaseInputs`, and `phaseTTL` are currently maintained independently. A Phase interface that consolidates them eliminates drift — but moving `phaseInputs` out of `cache.go` touches the internal caching logic that references it directly.
+- **`phaseInputs` and `phaseTTL` use `string` keys, not `state.Phase`.** Any interface defined in `internal/state` or `internal/context` must handle this type mismatch.
+- **`Recover()` in `state.go` encodes artifact→phase mapping independently** of `ArtifactFileName`. A Phase interface with `ArtifactFile() string` would let `Recover()` be driven from the registry.
+- **`AllPhases()` returns a hardcoded ordered slice.** If custom phases are inserted, ordering must be deterministic (prerequisite satisfaction in `nextReady()`).
+
+### High risk
+- **Cross-package interface placement.** A `Phase` interface needs to be visible to `state`, `context`, `artifacts`, and `cli`. If defined in `internal/state`, `context` would import `state` (already does) — safe. If defined in a new `internal/phase` package, all four packages import it.
+- **No assembler for `verify` and `archive`.** Any interface must accommodate phases that don't participate in context assembly. Options: nil assembler field, or a separate optional interface (`Assembler`).
+- **`AssembleConcurrent` assumes `spec`+`design` can run in parallel** because both have `propose` as their sole prerequisite. If custom phases are added with the same pattern, `ReadyPhases()` already handles the general case — `AssembleConcurrent` would need no changes.
+
+---
+
+## Approach Comparison
+
+### Approach A: Phase as Interface (consolidates all metadata)
+
+Define a `Phase` interface (or struct) that carries: name, prerequisites, artifact filename, cache inputs, cache TTL, and assembler function. Register instances in a single registry slice.
+
+```go
+// internal/phase/phase.go
+type Phase interface {
+    Name() string
+    Prerequisites() []string
+    ArtifactFile() string
+    CacheInputs() []string
+    CacheTTL() time.Duration
+    Assemble(w io.Writer, p *context.Params) error
+}
+```
+
+**Pros:** Single source of truth per phase. Custom phases: implement interface and register. No map synchronization. `Recover()` and `validate()` become data-driven.
+**Cons:** Circular import problem — `context.Params` references `config.Config`, `events.Broker`, etc. A pure `phase` package cannot import `context` without a cycle. Would need `Params` to be defined in a neutral package (e.g., `internal/phase`), or assembler extracted as a separate optional interface.
+
+### Approach B: Phase as Struct with Assembler Field (simpler, no interface needed)
+
+```go
+// internal/phase/phase.go
+type Phase struct {
+    Name          string
+    Prerequisites []string
+    ArtifactFile  string
+    CacheInputs   []string
+    CacheTTL      time.Duration
+    Assemble      func(w io.Writer, p *AssemblerParams) error // nullable
+}
+```
+
+Registry is `[]Phase`, accessed by name. `state.Phase` (the string type) remains unchanged; the struct is a richer descriptor.
+
+**Pros:** No interface, no circular import. Nil `Assemble` field = non-assembling phase (verify, archive). Custom phases: append to registry. Map synchronization eliminated.
+**Cons:** Not extensible via interface polymorphism. Custom phases share the same struct layout — sufficient for the stated goal.
+
+### Approach C: Minimal — keep current maps, add registry type for documentation/testing
+
+Add a `PhaseRegistry` struct that wraps the existing four maps with validation methods and a `RegisterCustom()` function. Core maps stay; registry validates consistency at startup.
+
+**Pros:** Least invasive. No cross-package movement. Existing tests unchanged.
+**Cons:** Does not eliminate map synchronization. Custom phases still require editing multiple maps. Doesn't achieve the "self-documenting" goal. Addresses testability partially (validator) but not pluggability.
+
+---
+
+## Recommendation
+
+**Approach B** (Phase struct with assembler field) is the right fit given the actual codebase.
+
+Rationale:
+1. The codebase is Go and already uses `type Assembler func(...)` — a struct with a function field is idiomatic Go.
+2. The four parallel maps (`prerequisites`, `ArtifactFileName`, `phaseInputs`, `phaseTTL`) are the primary pain point. A struct eliminates all four in one move.
+3. The interface approach (A) requires moving `context.Params` to a neutral package, which is a larger refactor with more blast radius than the value justifies.
+4. Custom phases need only construct a `Phase` struct and call `registry.Register(p)` — no core files modified.
+5. `verify` and `archive` (no assembler) are handled naturally by a nil `Assemble` field.
+
+The proposed refactor touches these files directly:
+- **New:** `internal/phase/phase.go` — `Phase` struct + registry + `AssemblerParams` (moved from `context.Params`)
+- **Modified:** `internal/state/types.go` — `AllPhases()` becomes registry-driven
+- **Modified:** `internal/state/state.go` — `prerequisites`, `validNextPhases`, `Recover()` driven from registry
+- **Modified:** `internal/artifacts/artifacts.go` — `ArtifactFileName` driven from registry
+- **Modified:** `internal/context/context.go` — `dispatchers` + `phaseInputs` + `phaseTTL` driven from registry; `Params` → `phase.AssemblerParams`
+- **Modified:** `internal/context/cache.go` — `phaseInputs`, `phaseTTL` read from registry
+
+`internal/cli/commands.go` sees no changes — it uses `state.Phase` (the string), `context.Assemble()`, and `state.ReadyPhases()`, all of which remain.
+
+**Scope note:** This is a moderate refactor touching 6 files. The interface boundary (`phase.Phase` struct + `phase.Registry`) is the value-add. The assembler function signatures (`func(io.Writer, *AssemblerParams) error`) do not change structurally — just their location.
+

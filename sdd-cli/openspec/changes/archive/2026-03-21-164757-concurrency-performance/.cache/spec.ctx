@@ -1,0 +1,488 @@
+
+--- SKILL ---
+
+---
+name: sdd-spec
+description: >
+  Write delta specifications (ADDED/MODIFIED/REMOVED requirements) with Given/When/Then scenarios using RFC 2119 keywords.
+  Trigger: When user runs /sdd-continue after proposal is approved, or after sdd-propose completes.
+license: MIT
+metadata:
+  version: "1.0"
+---
+
+# SDD Spec
+
+You are executing the **spec** phase inline. Specifications define WHAT the system must do after the change is applied, expressed as requirements with testable scenarios. You use RFC 2119 keywords for precision and Given/When/Then scenarios for verifiability.
+
+## Activation
+
+User runs `/sdd-continue` or `/sdd-spec` after the proposal is approved. Reads `openspec/changes/{changeName}/proposal.md` and `openspec/specs/` for existing context.
+
+## Execution Steps
+
+### Step 1: Load Project Context
+
+1. Read `openspec/config.yaml` for:
+   - Spec phase rules (`phases.specs`)
+   - RFC 2119 keyword usage
+   - Scenario format (Given/When/Then)
+   - Minimum scenarios per requirement
+2. Read project conventions relevant to specs (type strictness, error handling, testing patterns).
+
+### Step 2: Read Proposal
+
+1. Read `proposal.md` at the provided path.
+2. Extract:
+   - Intent (what the change accomplishes)
+   - In-scope items (each becomes a spec domain or requirement group)
+   - Affected areas (files and modules that will change)
+   - Success criteria (each maps to one or more requirements)
+   - Out-of-scope items (ensure specs do not accidentally cover these)
+3. If the proposal has unresolved open questions, warn in the output but proceed with available information.
+
+### Step 3: Read Existing Specs
+
+1. If `openspec/specs/` contains existing spec files, read them for context.
+2. Existing specs represent the CURRENT system behavior.
+3. Delta specs describe CHANGES to this baseline:
+   - **ADDED**: New behaviors not in the current system
+   - **MODIFIED**: Changed behaviors (must reference what they replace)
+   - **REMOVED**: Deleted behaviors (must explain why)
+4. If no existing specs exist, all requirements are ADDED.
+
+### Step 4: Identify Spec Domains
+
+Group requirements by domain. A domain is a logical area of the system:
+
+| Domain Type       | Example Domains                              |
+|-------------------|----------------------------------------------|
+| API               | auth-api, users-api, payments-api            |
+| Data              | user-schema, session-schema, migration       |
+| Business Logic    | auth-flow, permission-rules, pricing-engine  |
+| UI                | login-form, dashboard-layout, settings-page  |
+| Infrastructure    | database-connection, cache-layer, queue      |
+| Integration       | oauth-provider, email-service, webhook       |
+
+Each in-scope item from the proposal maps to one or more domains.
+
+### Step 5: Write Delta Spec Files
+
+For each domain, create a spec file:
+
+**Path**: `openspec/changes/{change_name}/specs/{domain}/spec.md`
+
+Each spec file follows this structure:
+
+```markdown
+# Delta Spec: {Domain Name (title case)}
+
+**Change**: {change_name}
+**Date**: {ISO 8601 timestamp}
+**Status**: draft
+**Depends On**: proposal.md
+
+---
+
+## Context
+
+{Brief description of this domain's role in the change. Reference the proposal intent and relevant existing specs if any.}
+
+## ADDED Requirements
+
+### REQ-{DOMAIN}-{NNN}: {Requirement Title}
+
+{Requirement description using RFC 2119 keywords.}
+
+The system **MUST** {required behavior}.
+The system **SHALL** {required behavior}.
+The system **SHOULD** {recommended behavior}.
+The system **MAY** {optional behavior}.
+
+#### Scenario: {Scenario Title} · `code-based` · `critical`
+
+- **WHEN** {action - specific trigger or input}
+- **THEN** {outcome - specific, observable, verifiable result}
+
+#### Scenario: {Edge Case Title} · `code-based` · `critical`
+
+- **GIVEN** {non-obvious precondition that changes the outcome}
+- **WHEN** {action that triggers edge case}
+- **THEN** {expected handling of edge case}
+
+---
+
+## MODIFIED Requirements
+
+### REQ-{DOMAIN}-{NNN}: {Requirement Title}
+
+**Previously**: {Reference to existing spec or description of current behavior}
+
+{New requirement description using RFC 2119 keywords.}
+
+The system **MUST** now {changed behavior} instead of {old behavior}.
+
+#### Scenario: {Scenario showing new behavior} · `code-based` · `critical`
+
+- **WHEN** {action}
+- **THEN** {new outcome, different from previous behavior}
+
+---
+
+## REMOVED Requirements
+
+### REQ-{DOMAIN}-{NNN}: {Requirement Title}
+
+**Reason**: {Why this requirement is being removed}
+
+**Previously**: {What the system used to do}
+
+**Migration**: {How existing users/data are affected, if applicable}
+
+---
+
+## Acceptance Criteria Summary
+
+| Requirement ID       | Type     | Priority   | Scenarios |
+|----------------------|----------|------------|-----------|
+| REQ-{DOMAIN}-001    | ADDED    | MUST       | 2         |
+| REQ-{DOMAIN}-002    | ADDED    | SHOULD     | 1         |
+| REQ-{DOMAIN}-003    | MODIFIED | MUST       | 2         |
+
+**Total Requirements**: {count}
+**Total Scenarios**: {count}
+```
+
+### Step 6: RFC 2119 Keyword Usage
+
+Apply keywords precisely as defined in RFC 2119:
+
+| Keyword          | Meaning                                          | Usage                                |
+|------------------|--------------------------------------------------|--------------------------------------|
+| **MUST**         | Absolute requirement                             | Core functionality, security rules   |
+| **MUST NOT**     | Absolute prohibition                             | Security violations, data corruption |
+| **SHALL**        | Same as MUST (used for variety)                  | Contractual obligations              |
+| **SHALL NOT**    | Same as MUST NOT                                 | Contractual prohibitions             |
+| **SHOULD**       | Recommended, but valid reasons to deviate exist  | Best practices, performance goals    |
+| **SHOULD NOT**   | Discouraged, but valid reasons to include exist  | Anti-patterns with exceptions        |
+| **MAY**          | Truly optional                                   | Nice-to-have features, extensions    |
+
+Rules for keyword usage:
+- Every MUST/SHALL requirement needs at least one scenario proving compliance.
+- Every MUST NOT/SHALL NOT needs at least one scenario proving violation is handled.
+- SHOULD requirements need scenarios but failures are warnings, not blockers.
+- MAY requirements need scenarios to define behavior IF the option is implemented.
+
+### Step 7: Scenario Quality Standards
+
+Each scenario heading MUST include an inline eval type and criticality tag:
+
+```
+#### Scenario: {Title} · `{eval-type}` · `{criticality}`
+```
+
+- `eval-type`: `code-based` | `model-based` | `human-based` (same classification as Step 8b)
+- `criticality`: `critical` | `standard`
+
+This pre-annotates the Eval Definitions table at authoring time — Step 8b reads these tags directly instead of re-classifying.
+
+**GIVEN is optional.** Only include it when the precondition is non-obvious or changes the outcome. Omitting it for straightforward cases keeps scenarios focused on the trigger and result.
+
+- Include GIVEN when: a specific system state, user role, prior action, or data condition materially affects the scenario
+- Omit GIVEN when: the precondition is implied by the requirement context (e.g., "GIVEN a user exists" for a user API requirement)
+
+Each scenario must also be:
+
+1. **Specific**: Use concrete values, not placeholders.
+   - Bad: "WHEN a user submits the form"
+   - Good: "WHEN a POST request is made to `/api/users` with body `{ email: 'test@example.com', role: 'admin' }`"
+
+2. **Independent**: Each scenario tests one behavior path.
+   - Bad: "THEN the user is created AND an email is sent AND the audit log is updated"
+   - Good: Three separate scenarios for creation, email, and audit
+
+3. **Verifiable**: The THEN clause must be observable and map to a single assertion.
+   - Bad: "THEN the system handles the error gracefully"
+   - Good: "THEN the API returns HTTP 400 with body `{ error: 'INVALID_EMAIL', message: 'Email format is invalid' }`"
+
+4. **Aligned with project conventions**:
+   - Reference the project's error handling patterns in THEN clauses where applicable (per CLAUDE.md)
+   - For API specs: include HTTP status codes and response body shapes
+   - For UI specs: reference user-visible states and interactions
+
+### Step 8: Cross-Domain Consistency
+
+After writing all domain specs:
+
+1. Check for **requirement ID collisions** across domains.
+2. Check for **contradictions** (Domain A says MUST, Domain B says MUST NOT for same behavior).
+3. Check for **missing coverage** (proposal in-scope items without corresponding requirements).
+4. Check for **scope creep** (requirements that cover out-of-scope items from proposal).
+
+Document any issues found in the summary output warnings.
+
+### Step 8b: Generate Eval Definitions
+
+For each scenario across all domain specs, emit an eval definition. This enables `sdd-verify` to apply pass@k scoring instead of binary pass/fail.
+
+**Eval type and criticality are already declared** in each scenario heading as inline tags (set in Step 7). Read them directly — do NOT re-classify from the THEN clause. If a scenario heading is missing its tags, treat it as `code-based` · `standard` and flag a warning.
+
+For reference only (use when authoring scenarios, not when generating the table):
+
+**Eval type** — pick based on the THEN clause:
+
+| Type | Use when THEN clause... |
+|------|------------------------|
+| `code-based` | References observable, machine-checkable state (HTTP status, return value, DB row, error code) |
+| `model-based` | Describes semantic behavior requiring judgment (UX quality, error message tone, accessibility) |
+| `human-based` | Requires manual verification (visual design, business process approval) |
+
+**Criticality** — pick based on RFC 2119 keyword and domain:
+
+| Level | When | Verify threshold |
+|-------|------|-----------------|
+| `critical` | MUST/SHALL requirements, security scenarios, data integrity | pass^3 = 1.00 → **FAIL** if absent |
+| `standard` | SHOULD requirements, performance goals, UX scenarios | pass@3 ≥ 0.90 → **PASS_WITH_WARNINGS** if absent |
+
+Add an `## Eval Definitions` section at the end of each domain spec file (after Acceptance Criteria Summary):
+
+```markdown
+## Eval Definitions
+
+| Scenario | Eval Type | Criticality | Threshold |
+|----------|-----------|-------------|-----------|
+| REQ-{DOMAIN}-001 › {Scenario Title} | code-based | critical | pass^3 = 1.00 |
+| REQ-{DOMAIN}-001 › {Edge Case Title} | code-based | critical | pass^3 = 1.00 |
+| REQ-{DOMAIN}-002 › {Scenario Title} | code-based | standard | pass@3 ≥ 0.90 |
+| REQ-{DOMAIN}-003 › {Scenario Title} | model-based | standard | pass@3 ≥ 0.90 |
+```
+
+Every scenario in the Acceptance Criteria Summary MUST have a corresponding row here. No orphaned scenarios.
+
+### Step 9: Present Summary
+
+Present a markdown summary to the user, then STOP. Do not proceed automatically.
+
+**On success, output:**
+
+```markdown
+## SDD Spec: {change_name}
+
+**Domains**: {N}  |  **Requirements**: {N}  |  **Scenarios**: {N}
+
+### Spec Files Written
+{For each domain:}
+- `openspec/changes/{change_name}/specs/{domain}/spec.md` — {N} requirements, {N} scenarios
+
+### Coverage
+| Domain | MUST | SHOULD | MAY | Scenarios |
+|--------|------|--------|-----|-----------|
+| {domain} | {N} | {N} | {N} | {N} |
+
+### Eval Definitions
+- **code-based**: {N}  |  **model-based**: {N}  |  **human-based**: {N}
+- **critical**: {N}  |  **standard**: {N}
+
+{If consistency issues: ### ⚠ Consistency Issues\n- {issue}\n}
+{If warnings: ### ⚠ Warnings\n- {warning}\n}
+
+**Next step**: Review the spec files in your editor. When satisfied, proceed to `/sdd-design` (if not already running in parallel) and then `/sdd-tasks` once both spec and design are complete.
+```
+
+## Rules and Constraints
+
+1. **Use RFC 2119 keywords precisely.** MUST means MUST. Do not use MUST for recommended behaviors.
+2. **Every requirement needs at least one testable scenario.** No exceptions. Requirements without scenarios are incomplete.
+3. **Scenarios must be concrete.** Use specific values, HTTP codes, type shapes, error messages. No vague "works correctly" assertions.
+4. **Delta specs describe CHANGES, not the entire system.** Only specify what is ADDED, MODIFIED, or REMOVED.
+5. **If existing specs exist in `openspec/specs/`**, reference them for context. MODIFIED requirements MUST include a "Previously:" reference.
+6. **REMOVED requirements MUST include a reason** and migration notes if applicable.
+7. **Never modify source code.** Specs are written to `openspec/changes/{change_name}/specs/`.
+8. **Never write specs for out-of-scope items.** If the proposal says "OAuth2 token refresh is out of scope", do not write refresh specs.
+9. **Specs can run in PARALLEL with sdd-design.** Both depend only on the proposal. Neither depends on the other.
+10. **Requirement IDs must be unique** across all domains within the change. Use the format `REQ-{DOMAIN}-{NNN}`.
+11. **Align scenarios with project error handling patterns** (per CLAUDE.md). THEN clauses should reference the project's success/error return conventions where applicable.
+12. **Include negative scenarios.** For every happy path, include at least one error/edge case scenario showing what happens when things go wrong.
+13. **Domain names MUST be kebab-case.** All domain identifiers and spec directory names MUST use lowercase-with-hyphens (e.g., `auth-api`, `user-profile`, `payment-flow`). Explicitly banned: `snake_case` (e.g., `auth_api`), `camelCase` (e.g., `authApi`), `PascalCase` (e.g., `AuthApi`). This ensures consistent directory naming across `openspec/changes/{change}/specs/{domain}/` and `openspec/specs/{domain}.spec.md`.
+
+## Error Handling
+
+- If `openspec/config.yaml` does not exist: return `status: error` recommending `sdd-init`.
+- If `proposal.md` does not exist at the given path: return `status: error` with message.
+- If proposal has `status: rejected`: return `status: error` with message "Proposal was rejected. Create a new proposal."
+- If a domain spec file already exists: overwrite it (specs are regenerated, not appended).
+- All errors include the phase name (`spec`) and a human-readable message.
+
+## PARCER Contract
+
+```yaml
+phase: spec
+preconditions:
+  - proposal.md exists and was approved
+postconditions:
+  - ≥1 spec file in openspec/changes/{changeName}/specs/
+  - each spec contains ≥1 GIVEN/WHEN/THEN scenario
+  - specs/ directory contains ≥1 spec file with ≥1 scenario
+```
+
+
+--- CHANGE ---
+
+Name: concurrency-performance
+Description: Phase 4 concurrency and performance — lazy artifact loading via csync.LazySlice, pub/sub event broker to decouple state machine from side effects, pprof profiling gate behind env var
+
+--- PROJECT ---
+
+Project: sdd-cli
+Language: go
+Build Tool: go
+Manifests: go.mod
+
+--- PIPELINE CONTEXT ---
+
+Change: concurrency-performance — Phase 4 concurrency and performance — lazy artifact loading via csync.LazySlice, pub/sub event broker to decouple state machine from side effects, pprof profiling gate behind env var
+Stack: go (go)
+Exploration: The sdd-cli is a Go CLI (go 1.24.1, sole dependency: `gopkg.in/yaml.v3`) that assembles structured context for each phase of a spec-driven development pipeline. The codebase is approximately 6,963 lines across all Go files (source + tests). It is single-threaded with one concurrency point (`AssembleConcurrent`), has no profiling infrastructure, and tightly couples state transitions with side effects (metrics recording, cache writes, stderr output).
+Proposal: The sdd-cli assembles context per-phase by sequentially reading 3-10+ files and running git commands, tightly couples side effects (metrics, caching, stderr output) into the assembly hot path, and has no profiling infrastructure. This change introduces lazy concurrent artifact loading, an event broker to decouple side effects, and an env-var-gated pprof profiling hook — improving assembly latency, fixing a metrics.json race in `AssembleConcurrent`, and enabling data-driven performance work.
+
+--- PROPOSAL ---
+
+# Proposal: Concurrency and Performance
+
+**Change ID**: concurrency-performance
+**Date**: 2026-03-21
+**Status**: draft
+
+---
+
+## Intent
+
+The sdd-cli assembles context per-phase by sequentially reading 3-10+ files and running git commands, tightly couples side effects (metrics, caching, stderr output) into the assembly hot path, and has no profiling infrastructure. This change introduces lazy concurrent artifact loading, an event broker to decouple side effects, and an env-var-gated pprof profiling hook — improving assembly latency, fixing a metrics.json race in `AssembleConcurrent`, and enabling data-driven performance work.
+
+## Scope
+
+### In Scope
+- New `internal/csync` package with `LazySlice[T]` generic type (bounded goroutine pool, per-element `sync.Once`)
+- Refactor all 8 assembler functions to use `LazySlice` for concurrent file/exec loading
+- New `internal/events` package with `Broker` type and typed event structs
+- Migrate `recordMetrics()`, `writeMetrics()`, and `saveContextCache()` from inline calls to event subscribers
+- Emit events from `Assemble()` in `context.go` and `runWrite()` in `commands.go`
+- `SDD_PPROF` env var check in `cmd/sdd/main.go` for CPU and heap profiling to file
+- Add pprof availability check to `sdd doctor`
+- Unit tests for `LazySlice` (with `-race`), `Broker`, and pprof gating
+
+### Out of Scope
+- HTTP-based pprof server — no HTTP server exists in the CLI; `runtime/pprof` write-to-file is sufficient
+- Replacing `AssembleConcurrent` with a generic pipeline scheduler — current WaitGroup pattern is adequate for the spec+design parallel window
+- Making `LazySlice` concurrency bound configurable via env var — hardcoded `min(NumCPU, 8)` is sufficient; can revisit if CI tuning is needed
+- External dependencies — all implementations use stdlib only
+- Tracing or OpenTelemetry integration — event broker provides the hook point; actual telemetry is future work
+
+## Approach
+
+Implementation proceeds in three stages ordered by ascending risk and descending immediacy of value. First, the pprof gate: a ~15-line addition to `cmd/sdd/main.go` that checks `SDD_PPROF` and wraps `cli.Run()` with `runtime/pprof` start/stop. This gives immediate profiling capability for validating the subsequent work.
+
+Second, `csync.LazySlice[T]`: a new generic type that wraps `[]func() (T, error)` with a bounded goroutine pool. Each assembler (explore, propose, spec, design, tasks, apply, review, clean) is refactored to construct loader functions for its I/O calls (file reads via `loadSkill`/`loadArtifact`/`loadSpecs`, git exec via `gitFileTree`/`gitDiff`, summary building via `buildSummary`), then call `LoadAll()` to fan out concurrently. The assembler body then accesses results by index. This is a mechanical refactor — each assembler's sequential calls become loader closures.
+
+Third, the event broker: a simple observer pattern where `Assemble()` (context.go:55-96) emits `PhaseAssembled`/`CacheHit`/`CacheMiss` events and `runWrite()` (commands.go:312-371) emits `ArtifactPromoted`/`StateAdvanced` events. The current inline `recordMetrics()` (cache.go:274-313) and `writeMetrics()` (cache.go:230-246) calls become subscribers registered at startup. This fixes the metrics.json race in `AssembleConcurrent` by routing all writes through a single serialized subscriber, and decouples the assembler from knowledge of caching and metrics concerns.
+
+### Key Decisions
+
+| Decision | Choice | Rationale |
+|----------|--------|-----------|
+| Lazy loading strategy | LazySlice per-assembler (not pre-fetch in `Assemble()` or `fs.FS`) | Handles git exec and `buildSummary` calls, not just file reads. Composable generic primitive reusable elsewhere. Pre-fetch misses git commands; `fs.FS` is over-engineered. |
+| Event dispatch model | In-process pub/sub broker (not callbacks on State, not channels) | Clean separation of concerns, fixes metrics.json race via serialized subscriber, testable with mock listeners. Callbacks don't fix concurrency; channels add lifecycle complexity. |
+| Profiling gate | `SDD_PPROF` env var in `main.go` (not CLI flag, not build tag) | Dev-only diagnostic — env var is zero-cost when off, follows Go idioms (`GODEBUG`, `GORACE`). CLI flag pollutes user-facing help. Build tag requires recompilation. |
+| Implementation order | pprof -> LazySlice -> event broker | Ascending risk. pprof provides profiling for validating the other two. LazySlice is independent of the broker. Broker depends on understanding the side-effect call sites that LazySlice may shift. |
+| Goroutine bound | `min(runtime.NumCPU(), 8)` hardcoded | Typical assembler loads 3-10 files; 8 goroutines saturates local I/O. Avoids config complexity. |
+| Broker injection | Via `Params` struct field (not global singleton) | Testable, no global state. The field is set once in `runContext`/`runNew` and passed through existing `Params` plumbing. Nil-safe — nil broker means no event dispatch. |
+
+## Affected Areas
+
+| Module / Area | File Path | Change Type | Risk Level |
+|---------------|-----------|-------------|------------|
+| Entry point | `/home/reche/projects/SDDworkflow/sdd-cli/cmd/sdd/main.go` | Modified — pprof gate | Low |
+| Concurrency primitives | `/home/reche/projects/SDDworkflow/sdd-cli/internal/csync/lazyslice.go` | New — `LazySlice[T]` type | Medium |
+| Concurrency tests | `/home/reche/projects/SDDworkflow/sdd-cli/internal/csync/lazyslice_test.go` | New — race-detector tests | Low |
+| Event broker | `/home/reche/projects/SDDworkflow/sdd-cli/internal/events/broker.go` | New — `Broker`, event types | Medium |
+| Event broker tests | `/home/reche/projects/SDDworkflow/sdd-cli/internal/events/broker_test.go` | New — dispatch/subscribe tests | Low |
+| Assembler dispatcher | `/home/reche/projects/SDDworkflow/sdd-cli/internal/context/context.go` | Modified — emit events from `Assemble()`, add `Broker` to `Params` | Medium |
+| Cache/metrics | `/home/reche/projects/SDDworkflow/sdd-cli/internal/context/cache.go` | Modified — extract `recordMetrics`/`writeMetrics`/`saveContextCache` into event subscribers | Medium |
+| Explore assembler | `/home/reche/projects/SDDworkflow/sdd-cli/internal/context/explore.go` | Modified — LazySlice refactor | Low |
+| Propose assembler | `/home/reche/projects/SDDworkflow/sdd-cli/internal/context/propose.go` | Modified — LazySlice refactor | Low |
+| Spec assembler | `/home/reche/projects/SDDworkflow/sdd-cli/internal/context/spec.go` | Modified — LazySlice refactor | Low |
+| Design assembler | `/home/reche/projects/SDDworkflow/sdd-cli/internal/context/design.go` | Modified — LazySlice refactor | Low |
+| Tasks assembler | `/home/reche/projects/SDDworkflow/sdd-cli/internal/context/tasks.go` | Modified — LazySlice refactor | Low |
+| Apply assembler | `/home/reche/projects/SDDworkflow/sdd-cli/internal/context/apply.go` | Modified — LazySlice refactor | Low |
+| Review assembler | `/home/reche/projects/SDDworkflow/sdd-cli/internal/context/review.go` | Modified — LazySlice refactor | Low |
+| Clean assembler | `/home/reche/projects/SDDworkflow/sdd-cli/internal/context/clean.go` | Modified — LazySlice refactor | Low |
+| CLI commands | `/home/reche/projects/SDDworkflow/sdd-cli/internal/cli/commands.go` | Modified — emit events from `runWrite()`, wire broker into `Params` | Medium |
+| Doctor checks | `/home/reche/projects/SDDworkflow/sdd-cli/internal/cli/doctor.go` | Modified — add pprof env var check | Low |
+
+**Total files affected**: 18
+**New files**: 4
+**Modified files**: 14
+**Deleted files**: 0
+
+## Risks
+
+| Risk | Probability | Impact | Mitigation |
+|------|-------------|--------|------------|
+| LazySlice goroutine leak on assembler error | Low | Medium | `LoadAll()` waits on all goroutines via `sync.WaitGroup` before returning, regardless of errors. Unit test with intentional errors + race detector. |
+| Event broker subscriber panic crashes CLI | Low | High | Broker wraps each subscriber dispatch in `defer recover()`. Subscriber panics logged to stderr but do not propagate to caller. |
+| Assembler refactor changes output byte order | Medium | High | Each assembler's `writeSection` calls remain identical — only the I/O scheduling changes (results accessed by index, not arrival order). Existing `context_test.go` tests (541 lines) validate output content. Full test suite with `-race` before merge. |
+| `Params.Broker` nil dereference in tests | Medium | Low | `Assemble()` nil-checks broker before emitting. Tests that don't set a broker continue to work without events. |
+| Metrics.json data loss during migration | Low | Low | Metrics are best-effort and regenerated on next assembly. No user-visible data depends on metrics.json continuity. |
+| pprof profile file left in CWD | Low | Low | Profile files (`sdd-cpu.prof`, `sdd-mem.prof`) only created when `SDD_PPROF` is explicitly set. Documented in `sdd doctor` output. |
+
+**Overall Risk Level**: medium
+
+## Rollback Plan
+
+### Steps to Rollback
+1. Revert the merge commit — all three features are additive with no schema or state format changes
+2. The `internal/csync` and `internal/events` packages are self-contained; removing them has no cascade effects
+3. Assemblers revert to sequential `loadSkill`/`loadArtifact` calls (the pre-change pattern)
+4. `Assemble()` and `runWrite()` revert to inline `recordMetrics`/`saveContextCache` calls
+5. `main.go` pprof block is removed (single `if` block)
+
+### Rollback Verification
+- `go test ./... -race` passes (confirms no residual concurrency references)
+- `go build ./cmd/sdd` succeeds (confirms no import of removed packages)
+- `sdd context <change> explore` produces identical output to pre-change version
+- `sdd doctor` runs without errors
+
+## Dependencies
+
+### Internal Dependencies
+- `internal/state.Phase` type used as event payload field — no changes to state package required
+- `internal/context.Params` struct gains a `Broker` field — backward compatible (zero-value nil means no events)
+- `internal/config.Config` unchanged
+
+### External Dependencies
+- None. All implementations use Go stdlib only (`sync`, `runtime/pprof`, `runtime`). No new external dependencies added to `go.mod`.
+
+### Infrastructure Dependencies
+- Go 1.24.1 generics support (already in use per `go.mod`)
+- Race detector (`go test -race`) for CI validation of `csync` and `events` packages
+
+## Success Criteria
+
+- [ ] `go test ./... -race` passes with zero data races
+- [ ] `SDD_PPROF=cpu sdd context <change> explore` produces `sdd-cpu.prof` loadable by `go tool pprof`
+- [ ] `SDD_PPROF=mem sdd context <change> explore` produces `sdd-mem.prof`
+- [ ] `sdd doctor` reports pprof availability status
+- [ ] All 8 assemblers produce byte-identical output with LazySlice vs sequential loading (verified by existing context_test.go)
+- [ ] `AssembleConcurrent` spec+design parallel window no longer races on metrics.json (verified via `-race` flag)
+- [ ] Event broker emits `PhaseAssembled`, `CacheHit`, `CacheMiss` events observable by test subscriber
+- [ ] `runWrite()` emits `ArtifactPromoted` and `StateAdvanced` events observable by test subscriber
+- [ ] No new external dependencies in `go.mod`
+- [ ] Benchmark: `sdd context` for review phase (highest I/O count at 5+N+rules ops) shows measurable wall-clock improvement with LazySlice vs sequential baseline
+
+## Open Questions
+
+- **LazySlice concurrency bound**: Should the goroutine pool be configurable via `SDD_CONCURRENCY` env var, or is `min(runtime.NumCPU(), 8)` sufficient? Current assemblers load 3-10 files; 8 goroutines likely saturates local disk I/O. Deferring configurability unless CI profiling shows contention.
+- **Event broker sync vs async dispatch**: Should subscribers run synchronously in the emitter's goroutine or asynchronously in a dedicated goroutine? Current side effects (metrics write, cache save) are best-effort and fast (<1ms each), suggesting synchronous is adequate. Will decide during spec phase after profiling overhead.
+- **Metrics.json race fix scope**: The current race in `AssembleConcurrent` where two goroutines both call `recordMetrics()` (cache.go:274) is a last-writer-wins data loss bug affecting the spec+design parallel window. The event broker fixes this by serializing writes. Should we also add `sync.Mutex` as belt-and-suspenders, or is the broker sufficient?
+- **pprof output directory**: Profile files written to CWD matches the crash log pattern in `main.go` (line 24). Should they go to `openspec/.cache/` instead to avoid cluttering the project root?
+

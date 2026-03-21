@@ -1,0 +1,15 @@
+{
+  "version": 5,
+  "phases": {
+    "design": {
+      "bytes": 30140,
+      "tokens": 7535,
+      "cached": false,
+      "duration_ms": 0
+    }
+  },
+  "total_bytes": 30140,
+  "total_tokens": 7535,
+  "cache_hits": 0,
+  "cache_misses": 1
+}

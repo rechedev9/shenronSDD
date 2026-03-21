@@ -1,0 +1,511 @@
+
+--- SKILL ---
+
+---
+name: sdd-spec
+description: >
+  Write delta specifications (ADDED/MODIFIED/REMOVED requirements) with Given/When/Then scenarios using RFC 2119 keywords.
+  Trigger: When user runs /sdd-continue after proposal is approved, or after sdd-propose completes.
+license: MIT
+metadata:
+  version: "1.0"
+---
+
+# SDD Spec
+
+You are executing the **spec** phase inline. Specifications define WHAT the system must do after the change is applied, expressed as requirements with testable scenarios. You use RFC 2119 keywords for precision and Given/When/Then scenarios for verifiability.
+
+## Activation
+
+User runs `/sdd-continue` or `/sdd-spec` after the proposal is approved. Reads `openspec/changes/{changeName}/proposal.md` and `openspec/specs/` for existing context.
+
+## Execution Steps
+
+### Step 1: Load Project Context
+
+1. Read `openspec/config.yaml` for:
+   - Spec phase rules (`phases.specs`)
+   - RFC 2119 keyword usage
+   - Scenario format (Given/When/Then)
+   - Minimum scenarios per requirement
+2. Read project conventions relevant to specs (type strictness, error handling, testing patterns).
+
+### Step 2: Read Proposal
+
+1. Read `proposal.md` at the provided path.
+2. Extract:
+   - Intent (what the change accomplishes)
+   - In-scope items (each becomes a spec domain or requirement group)
+   - Affected areas (files and modules that will change)
+   - Success criteria (each maps to one or more requirements)
+   - Out-of-scope items (ensure specs do not accidentally cover these)
+3. If the proposal has unresolved open questions, warn in the output but proceed with available information.
+
+### Step 3: Read Existing Specs
+
+1. If `openspec/specs/` contains existing spec files, read them for context.
+2. Existing specs represent the CURRENT system behavior.
+3. Delta specs describe CHANGES to this baseline:
+   - **ADDED**: New behaviors not in the current system
+   - **MODIFIED**: Changed behaviors (must reference what they replace)
+   - **REMOVED**: Deleted behaviors (must explain why)
+4. If no existing specs exist, all requirements are ADDED.
+
+### Step 4: Identify Spec Domains
+
+Group requirements by domain. A domain is a logical area of the system:
+
+| Domain Type       | Example Domains                              |
+|-------------------|----------------------------------------------|
+| API               | auth-api, users-api, payments-api            |
+| Data              | user-schema, session-schema, migration       |
+| Business Logic    | auth-flow, permission-rules, pricing-engine  |
+| UI                | login-form, dashboard-layout, settings-page  |
+| Infrastructure    | database-connection, cache-layer, queue      |
+| Integration       | oauth-provider, email-service, webhook       |
+
+Each in-scope item from the proposal maps to one or more domains.
+
+### Step 5: Write Delta Spec Files
+
+For each domain, create a spec file:
+
+**Path**: `openspec/changes/{change_name}/specs/{domain}/spec.md`
+
+Each spec file follows this structure:
+
+```markdown
+# Delta Spec: {Domain Name (title case)}
+
+**Change**: {change_name}
+**Date**: {ISO 8601 timestamp}
+**Status**: draft
+**Depends On**: proposal.md
+
+---
+
+## Context
+
+{Brief description of this domain's role in the change. Reference the proposal intent and relevant existing specs if any.}
+
+## ADDED Requirements
+
+### REQ-{DOMAIN}-{NNN}: {Requirement Title}
+
+{Requirement description using RFC 2119 keywords.}
+
+The system **MUST** {required behavior}.
+The system **SHALL** {required behavior}.
+The system **SHOULD** {recommended behavior}.
+The system **MAY** {optional behavior}.
+
+#### Scenario: {Scenario Title} · `code-based` · `critical`
+
+- **WHEN** {action - specific trigger or input}
+- **THEN** {outcome - specific, observable, verifiable result}
+
+#### Scenario: {Edge Case Title} · `code-based` · `critical`
+
+- **GIVEN** {non-obvious precondition that changes the outcome}
+- **WHEN** {action that triggers edge case}
+- **THEN** {expected handling of edge case}
+
+---
+
+## MODIFIED Requirements
+
+### REQ-{DOMAIN}-{NNN}: {Requirement Title}
+
+**Previously**: {Reference to existing spec or description of current behavior}
+
+{New requirement description using RFC 2119 keywords.}
+
+The system **MUST** now {changed behavior} instead of {old behavior}.
+
+#### Scenario: {Scenario showing new behavior} · `code-based` · `critical`
+
+- **WHEN** {action}
+- **THEN** {new outcome, different from previous behavior}
+
+---
+
+## REMOVED Requirements
+
+### REQ-{DOMAIN}-{NNN}: {Requirement Title}
+
+**Reason**: {Why this requirement is being removed}
+
+**Previously**: {What the system used to do}
+
+**Migration**: {How existing users/data are affected, if applicable}
+
+---
+
+## Acceptance Criteria Summary
+
+| Requirement ID       | Type     | Priority   | Scenarios |
+|----------------------|----------|------------|-----------|
+| REQ-{DOMAIN}-001    | ADDED    | MUST       | 2         |
+| REQ-{DOMAIN}-002    | ADDED    | SHOULD     | 1         |
+| REQ-{DOMAIN}-003    | MODIFIED | MUST       | 2         |
+
+**Total Requirements**: {count}
+**Total Scenarios**: {count}
+```
+
+### Step 6: RFC 2119 Keyword Usage
+
+Apply keywords precisely as defined in RFC 2119:
+
+| Keyword          | Meaning                                          | Usage                                |
+|------------------|--------------------------------------------------|--------------------------------------|
+| **MUST**         | Absolute requirement                             | Core functionality, security rules   |
+| **MUST NOT**     | Absolute prohibition                             | Security violations, data corruption |
+| **SHALL**        | Same as MUST (used for variety)                  | Contractual obligations              |
+| **SHALL NOT**    | Same as MUST NOT                                 | Contractual prohibitions             |
+| **SHOULD**       | Recommended, but valid reasons to deviate exist  | Best practices, performance goals    |
+| **SHOULD NOT**   | Discouraged, but valid reasons to include exist  | Anti-patterns with exceptions        |
+| **MAY**          | Truly optional                                   | Nice-to-have features, extensions    |
+
+Rules for keyword usage:
+- Every MUST/SHALL requirement needs at least one scenario proving compliance.
+- Every MUST NOT/SHALL NOT needs at least one scenario proving violation is handled.
+- SHOULD requirements need scenarios but failures are warnings, not blockers.
+- MAY requirements need scenarios to define behavior IF the option is implemented.
+
+### Step 7: Scenario Quality Standards
+
+Each scenario heading MUST include an inline eval type and criticality tag:
+
+```
+#### Scenario: {Title} · `{eval-type}` · `{criticality}`
+```
+
+- `eval-type`: `code-based` | `model-based` | `human-based` (same classification as Step 8b)
+- `criticality`: `critical` | `standard`
+
+This pre-annotates the Eval Definitions table at authoring time — Step 8b reads these tags directly instead of re-classifying.
+
+**GIVEN is optional.** Only include it when the precondition is non-obvious or changes the outcome. Omitting it for straightforward cases keeps scenarios focused on the trigger and result.
+
+- Include GIVEN when: a specific system state, user role, prior action, or data condition materially affects the scenario
+- Omit GIVEN when: the precondition is implied by the requirement context (e.g., "GIVEN a user exists" for a user API requirement)
+
+Each scenario must also be:
+
+1. **Specific**: Use concrete values, not placeholders.
+   - Bad: "WHEN a user submits the form"
+   - Good: "WHEN a POST request is made to `/api/users` with body `{ email: 'test@example.com', role: 'admin' }`"
+
+2. **Independent**: Each scenario tests one behavior path.
+   - Bad: "THEN the user is created AND an email is sent AND the audit log is updated"
+   - Good: Three separate scenarios for creation, email, and audit
+
+3. **Verifiable**: The THEN clause must be observable and map to a single assertion.
+   - Bad: "THEN the system handles the error gracefully"
+   - Good: "THEN the API returns HTTP 400 with body `{ error: 'INVALID_EMAIL', message: 'Email format is invalid' }`"
+
+4. **Aligned with project conventions**:
+   - Reference the project's error handling patterns in THEN clauses where applicable (per CLAUDE.md)
+   - For API specs: include HTTP status codes and response body shapes
+   - For UI specs: reference user-visible states and interactions
+
+### Step 8: Cross-Domain Consistency
+
+After writing all domain specs:
+
+1. Check for **requirement ID collisions** across domains.
+2. Check for **contradictions** (Domain A says MUST, Domain B says MUST NOT for same behavior).
+3. Check for **missing coverage** (proposal in-scope items without corresponding requirements).
+4. Check for **scope creep** (requirements that cover out-of-scope items from proposal).
+
+Document any issues found in the summary output warnings.
+
+### Step 8b: Generate Eval Definitions
+
+For each scenario across all domain specs, emit an eval definition. This enables `sdd-verify` to apply pass@k scoring instead of binary pass/fail.
+
+**Eval type and criticality are already declared** in each scenario heading as inline tags (set in Step 7). Read them directly — do NOT re-classify from the THEN clause. If a scenario heading is missing its tags, treat it as `code-based` · `standard` and flag a warning.
+
+For reference only (use when authoring scenarios, not when generating the table):
+
+**Eval type** — pick based on the THEN clause:
+
+| Type | Use when THEN clause... |
+|------|------------------------|
+| `code-based` | References observable, machine-checkable state (HTTP status, return value, DB row, error code) |
+| `model-based` | Describes semantic behavior requiring judgment (UX quality, error message tone, accessibility) |
+| `human-based` | Requires manual verification (visual design, business process approval) |
+
+**Criticality** — pick based on RFC 2119 keyword and domain:
+
+| Level | When | Verify threshold |
+|-------|------|-----------------|
+| `critical` | MUST/SHALL requirements, security scenarios, data integrity | pass^3 = 1.00 → **FAIL** if absent |
+| `standard` | SHOULD requirements, performance goals, UX scenarios | pass@3 ≥ 0.90 → **PASS_WITH_WARNINGS** if absent |
+
+Add an `## Eval Definitions` section at the end of each domain spec file (after Acceptance Criteria Summary):
+
+```markdown
+## Eval Definitions
+
+| Scenario | Eval Type | Criticality | Threshold |
+|----------|-----------|-------------|-----------|
+| REQ-{DOMAIN}-001 › {Scenario Title} | code-based | critical | pass^3 = 1.00 |
+| REQ-{DOMAIN}-001 › {Edge Case Title} | code-based | critical | pass^3 = 1.00 |
+| REQ-{DOMAIN}-002 › {Scenario Title} | code-based | standard | pass@3 ≥ 0.90 |
+| REQ-{DOMAIN}-003 › {Scenario Title} | model-based | standard | pass@3 ≥ 0.90 |
+```
+
+Every scenario in the Acceptance Criteria Summary MUST have a corresponding row here. No orphaned scenarios.
+
+### Step 9: Present Summary
+
+Present a markdown summary to the user, then STOP. Do not proceed automatically.
+
+**On success, output:**
+
+```markdown
+## SDD Spec: {change_name}
+
+**Domains**: {N}  |  **Requirements**: {N}  |  **Scenarios**: {N}
+
+### Spec Files Written
+{For each domain:}
+- `openspec/changes/{change_name}/specs/{domain}/spec.md` — {N} requirements, {N} scenarios
+
+### Coverage
+| Domain | MUST | SHOULD | MAY | Scenarios |
+|--------|------|--------|-----|-----------|
+| {domain} | {N} | {N} | {N} | {N} |
+
+### Eval Definitions
+- **code-based**: {N}  |  **model-based**: {N}  |  **human-based**: {N}
+- **critical**: {N}  |  **standard**: {N}
+
+{If consistency issues: ### ⚠ Consistency Issues\n- {issue}\n}
+{If warnings: ### ⚠ Warnings\n- {warning}\n}
+
+**Next step**: Review the spec files in your editor. When satisfied, proceed to `/sdd-design` (if not already running in parallel) and then `/sdd-tasks` once both spec and design are complete.
+```
+
+## Rules and Constraints
+
+1. **Use RFC 2119 keywords precisely.** MUST means MUST. Do not use MUST for recommended behaviors.
+2. **Every requirement needs at least one testable scenario.** No exceptions. Requirements without scenarios are incomplete.
+3. **Scenarios must be concrete.** Use specific values, HTTP codes, type shapes, error messages. No vague "works correctly" assertions.
+4. **Delta specs describe CHANGES, not the entire system.** Only specify what is ADDED, MODIFIED, or REMOVED.
+5. **If existing specs exist in `openspec/specs/`**, reference them for context. MODIFIED requirements MUST include a "Previously:" reference.
+6. **REMOVED requirements MUST include a reason** and migration notes if applicable.
+7. **Never modify source code.** Specs are written to `openspec/changes/{change_name}/specs/`.
+8. **Never write specs for out-of-scope items.** If the proposal says "OAuth2 token refresh is out of scope", do not write refresh specs.
+9. **Specs can run in PARALLEL with sdd-design.** Both depend only on the proposal. Neither depends on the other.
+10. **Requirement IDs must be unique** across all domains within the change. Use the format `REQ-{DOMAIN}-{NNN}`.
+11. **Align scenarios with project error handling patterns** (per CLAUDE.md). THEN clauses should reference the project's success/error return conventions where applicable.
+12. **Include negative scenarios.** For every happy path, include at least one error/edge case scenario showing what happens when things go wrong.
+13. **Domain names MUST be kebab-case.** All domain identifiers and spec directory names MUST use lowercase-with-hyphens (e.g., `auth-api`, `user-profile`, `payment-flow`). Explicitly banned: `snake_case` (e.g., `auth_api`), `camelCase` (e.g., `authApi`), `PascalCase` (e.g., `AuthApi`). This ensures consistent directory naming across `openspec/changes/{change}/specs/{domain}/` and `openspec/specs/{domain}.spec.md`.
+
+## Error Handling
+
+- If `openspec/config.yaml` does not exist: return `status: error` recommending `sdd-init`.
+- If `proposal.md` does not exist at the given path: return `status: error` with message.
+- If proposal has `status: rejected`: return `status: error` with message "Proposal was rejected. Create a new proposal."
+- If a domain spec file already exists: overwrite it (specs are regenerated, not appended).
+- All errors include the phase name (`spec`) and a human-readable message.
+
+## PARCER Contract
+
+```yaml
+phase: spec
+preconditions:
+  - proposal.md exists and was approved
+postconditions:
+  - ≥1 spec file in openspec/changes/{changeName}/specs/
+  - each spec contains ≥1 GIVEN/WHEN/THEN scenario
+  - specs/ directory contains ≥1 spec file with ≥1 scenario
+```
+
+
+--- CHANGE ---
+
+Name: phase-interface
+Description: Define a Phase interface that makes phases pluggable, self-documenting, and testable. Custom phases can be added without modifying the core state machine. Refactor existing phase assemblers to implement the interface.
+
+--- PROJECT ---
+
+Project: sdd-cli
+Language: go
+Build Tool: go
+Manifests: go.mod
+
+--- PIPELINE CONTEXT ---
+
+Change: phase-interface — Define a Phase interface that makes phases pluggable, self-documenting, and testable. Custom phases can be added without modifying the core state machine. Refactor existing phase assemblers to implement the interface.
+Stack: go (go)
+Exploration: The SDD pipeline consists of 10 phases: `explore`, `propose`, `spec`, `design`, `tasks`, `apply`, `review`, `verify`, `clean`, `archive`. Each phase has an assembler function — a free function that takes `(io.Writer, *Params) error` and writes assembled context for an AI sub-agent to consume. The assembler type alias is already defined: ```go
+Proposal: Replace four parallel, unsynchronized package-level maps (`prerequisites`, `validNextPhases`, `ArtifactFileName`, `phaseInputs`/`phaseTTL`) with a single authoritative `Phase` struct and a `Registry`. Each phase becomes self-describing: it carries its own prerequisites, artifact filename, cache inputs, cache TTL, and assembler function. Custom phases can be registered at startup without touching core state machine files.
+
+--- PROPOSAL ---
+
+# Proposal: Phase Interface
+
+**Change ID**: phase-interface
+**Date**: 2026-03-21
+**Status**: draft
+
+---
+
+## Intent
+
+Replace four parallel, unsynchronized package-level maps (`prerequisites`, `validNextPhases`, `ArtifactFileName`, `phaseInputs`/`phaseTTL`) with a single authoritative `Phase` struct and a `Registry`. Each phase becomes self-describing: it carries its own prerequisites, artifact filename, cache inputs, cache TTL, and assembler function. Custom phases can be registered at startup without touching core state machine files.
+
+## Scope
+
+### In Scope
+
+- New `internal/phase` package with `Phase` struct, `Registry` type, and `AssemblerParams` (moved from `context.Params`)
+- Registration of all 10 built-in phases in `internal/phase/registry.go` (8 with assemblers, 2 with nil assembler — `verify`, `archive`)
+- Refactor `internal/state/state.go` — drive `prerequisites`, `validNextPhases`, `Recover()` from registry
+- Refactor `internal/state/types.go` — drive `AllPhases()` ordered slice from registry
+- Refactor `internal/artifacts/artifacts.go` — drive `ArtifactFileName` from registry
+- Refactor `internal/context/context.go` — drive `dispatchers` map and `Params` from registry; rename `Params` → `phase.AssemblerParams`
+- Refactor `internal/context/cache.go` — read `phaseInputs` and `phaseTTL` from registry instead of local maps
+- Unit test: `internal/phase/registry_test.go` — validate all 10 phases are registered, prerequisite graph is acyclic, no missing artifact files
+
+### Out of Scope
+
+- Go interface polymorphism (`Phase` as an interface type) — struct with function field is sufficient; interface approach requires moving `AssemblerParams` to a neutral package due to circular import, not worth the blast radius
+- Moving `context.Params` in its entirety — only the assembler-relevant fields become `phase.AssemblerParams`; the full `Params` struct stays in `context` if fields unrelated to assembly remain
+- CLI layer changes — `internal/cli/commands.go` is unchanged; it uses `state.Phase` (string), `context.Assemble()`, `state.ReadyPhases()`, none of which change signature
+- Custom phase loading from config file (YAML/TOML) — registry exposes `Register()` for programmatic use; file-based discovery is future work
+- Changing `AssembleConcurrent` spec+design parallelism logic — `ReadyPhases()` already handles the general case
+- Changing any on-disk artifact names or state.json schema
+
+## Approach
+
+All four parallel maps are eliminated in a single commit sequence. The new `phase.Phase` struct is the canonical descriptor:
+
+```go
+// internal/phase/phase.go
+type Phase struct {
+    Name          string
+    Prerequisites []string
+    NextPhases    []string
+    ArtifactFile  string        // "" for verify, archive
+    CacheInputs   []string
+    CacheTTL      time.Duration
+    Assemble      func(w io.Writer, p *AssemblerParams) error  // nil for verify, archive
+}
+```
+
+A `Registry` holds `[]Phase` ordered by pipeline position. Lookup is by name (O(N), N=10 — acceptable). Packages that previously owned a map call `phase.Registry.Get(name)` and read the relevant field.
+
+`AssemblerParams` is the sub-struct of current `context.Params` fields that assembler functions actually need. If all fields are needed, `AssemblerParams` is simply an alias. The key constraint is that `internal/phase` must not import `internal/context` (would cycle), so `AssemblerParams` is defined in `internal/phase` and `context` imports `phase`.
+
+Import graph after refactor:
+
+```
+internal/phase   (new, no internal imports)
+   ↑
+internal/state   (imports phase, drops local maps)
+internal/artifacts (imports phase, drops ArtifactFileName map)
+internal/context   (imports phase, assemblers registered here)
+internal/cli       (unchanged — imports state, context, artifacts as before)
+```
+
+### Key Decisions
+
+| Decision | Choice | Rationale |
+|----------|--------|-----------|
+| Struct vs interface | `Phase` struct with `func` field | No circular import problem; nil field handles verify/archive naturally; idiomatic Go for this pattern |
+| Package placement | New `internal/phase` package | Must be imported by `state`, `artifacts`, and `context` without cycles; cannot live in any of them |
+| `AssemblerParams` placement | Defined in `internal/phase` | Assembler func type references it; `context` assemblers import `phase` — no cycle |
+| `context.Params` fate | Keep as-is; assemblers receive `*phase.AssemblerParams` | Params has fields beyond assembler use (`Verbosity`, `Broker`, `Stderr`); avoid mass rename |
+| Registry ordering | `[]Phase` slice, position = pipeline order | `AllPhases()` and `nextReady()` depend on ordering; map lookup would lose this |
+| nil Assemble field | Permitted for verify, archive | Cleaner than a sentinel no-op function; callers guard with `p.Assemble != nil` |
+| Custom phase API | `phase.DefaultRegistry.Register(p Phase)` | One call, no core file edits; ordering constraint documented |
+
+## Affected Areas
+
+| Module / Area | File Path | Change Type | Risk Level |
+|---------------|-----------|-------------|------------|
+| Phase descriptor + registry | `internal/phase/phase.go` | New | Low |
+| Built-in phase registrations | `internal/phase/registry.go` | New | Low |
+| Registry unit tests | `internal/phase/registry_test.go` | New | Low |
+| State machine transitions | `internal/state/state.go` | Modified — drop `prerequisites`, `validNextPhases` maps; read from registry | Medium |
+| Phase type + ordering | `internal/state/types.go` | Modified — `AllPhases()` reads registry | Low |
+| Artifact name registry | `internal/artifacts/artifacts.go` | Modified — drop `ArtifactFileName` map; read from registry | Low |
+| Assembler dispatcher | `internal/context/context.go` | Modified — drop `dispatchers` map; read from registry; update `Params` assembler field type | Medium |
+| Cache inputs + TTL | `internal/context/cache.go` | Modified — drop `phaseInputs`, `phaseTTL` maps; read from registry | Low |
+
+**Total files affected**: 8
+**New files**: 3
+**Modified files**: 5
+**Deleted files**: 0
+
+## Risks
+
+| Risk | Probability | Impact | Mitigation |
+|------|-------------|--------|------------|
+| Import cycle: `context` → `phase` → `context` | Low | High | `internal/phase` has no internal imports by design; `AssemblerParams` defined there breaks potential cycle at root |
+| Registry not initialized before `state`/`context` init | Low | High | Go `init()` ordering: `phase` package `init()` runs before importers; built-in registrations in `registry.go` `init()` block |
+| `Recover()` drives artifact→phase lookup from registry — mismatch if `ArtifactFile` field is empty for non-canonical phases | Low | Medium | `Recover()` skips phases with empty `ArtifactFile`; existing behavior for verify/archive unchanged |
+| Parallel map access during `AssembleConcurrent` | Low | Medium | Registry is read-only after init; no synchronization needed for reads |
+| `AllPhases()` ordering change breaks `nextReady()` prerequisite walk | Low | High | Registry slice position == pipeline order; existing test suite (`state_test.go`) validates transition sequences |
+| Assembler function type mismatch at registration time | Medium | Low | Compile-time error; caught immediately by `go build` |
+
+**Overall Risk Level**: low-medium
+
+## Rollback Plan
+
+### Steps
+
+1. `git revert <merge-commit>` — all changes are in `internal/`; CLI and on-disk formats are unchanged
+2. The `internal/phase` package is self-contained; removing it causes compile errors only in the modified files, not in CLI
+3. Restore deleted map literals in `state.go`, `artifacts.go`, `context.go`, `cache.go` from revert
+4. `go build ./...` — confirms no dangling imports
+5. `go test ./...` — confirms behavioral parity
+
+### Rollback Verification
+
+- `go test ./... -race` passes
+- `go build ./cmd/sdd` succeeds
+- `sdd context <change> explore` produces output identical to pre-change baseline
+- `sdd write <change> explore` advances state without error
+
+## Dependencies
+
+### Internal
+
+- `internal/state.Phase` (string type) unchanged — registry keyed on it
+- `internal/context.Params` struct unchanged at call sites — only the assembler function field type annotation changes
+- `internal/events.Broker` unchanged — passed through `AssemblerParams`
+
+### External
+
+- None. No new entries in `go.mod`.
+
+### Infrastructure
+
+- Go 1.24.1 (already in use) — no generics required for this change
+- `go test ./internal/phase/...` added to CI matrix
+
+## Success Criteria
+
+- [ ] `go build ./...` succeeds with zero new imports in `go.mod`
+- [ ] `go test ./... -race` passes with no data races
+- [ ] `internal/phase/registry_test.go` asserts: all 10 phases registered, no duplicate names, prerequisite graph is acyclic, `verify` and `archive` have nil `Assemble` and empty `ArtifactFile`
+- [ ] `ArtifactFileName` map in `artifacts.go` deleted — replaced by registry lookup
+- [ ] `prerequisites` and `validNextPhases` maps in `state.go` deleted — replaced by registry lookup
+- [ ] `phaseInputs` and `phaseTTL` maps in `cache.go` deleted — replaced by registry lookup
+- [ ] `dispatchers` map in `context.go` deleted — replaced by registry lookup
+- [ ] Custom phase smoke test: a test-only `Phase` struct registered via `phase.DefaultRegistry.Register()` is picked up by `state.AllPhases()` and `context.Assemble()`
+- [ ] `internal/cli/commands.go` has zero diffs — CLI layer untouched
+
+## Open Questions
+
+- **`context.Params` vs `phase.AssemblerParams`**: Do all current fields of `context.Params` belong in `AssemblerParams`, or is a sub-struct cleaner? If `Broker`, `Stderr`, `Verbosity` are only used post-assembly (for metrics/logging), they may not need to move. Decision deferred to spec phase after reading call sites.
+- **Registry mutability after startup**: Should `Register()` panic if called after the first `Get()`? Prevents late registrations that race with reads during `AssembleConcurrent`. Conservative approach; revisit if tests need dynamic registration.
+- **`nextReady()` ordering with custom phases**: A custom phase appended to the registry after the 10 built-ins will be considered last in `nextReady()`. Is that the right default, or should `Register()` accept a position hint?
+- **`Recover()` rebuild**: Currently `Recover()` in `state.go` encodes an artifact→phase reverse map independently of `ArtifactFileName`. Should the registry-driven refactor also fix `Recover()` to derive this map from the registry, or is that a separate cleanup task?
+

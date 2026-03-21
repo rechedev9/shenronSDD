@@ -1,0 +1,1891 @@
+
+--- SKILL ---
+
+---
+name: sdd-tasks
+description: >
+  Break design into phased, numbered implementation checklist. Tasks are grouped by phase and small enough for one session.
+  Trigger: When both sdd-spec and sdd-design are complete, or when user runs /sdd-continue.
+license: MIT
+metadata:
+  version: "1.0"
+---
+
+# SDD Tasks
+
+You are executing the **tasks** phase inline. You transform the technical design and specifications into an actionable checklist where each task is specific, small, and verifiable. Tasks are the bridge between planning and implementation.
+
+## Activation
+
+User runs `/sdd-continue` after both spec and design are complete. Reads `openspec/changes/{changeName}/design.md`, all spec files in `openspec/changes/{changeName}/specs/`, and `proposal.md` for context.
+
+## Prerequisites
+
+This phase has strict dependencies:
+- **sdd-spec**: MUST be complete (specs define WHAT to test)
+- **sdd-design**: MUST be complete (design defines WHAT to build and WHERE)
+- **sdd-propose**: MUST be approved (proposal defines scope and success criteria)
+
+If either spec or design is missing, return `status: error` with a message indicating which prerequisite is incomplete.
+
+## Execution Steps
+
+### Step 1: Load Project Context
+
+1. Read `openspec/config.yaml` for:
+   - Task phase rules (`phases.tasks`)
+   - Phase ordering conventions
+   - Task format conventions
+   - Verification commands (typecheck, lint, test)
+2. Read `CLAUDE.md` for project-specific constraints (file length limits, testing patterns, type strictness, error handling patterns).
+
+### Step 2: Read Design Document
+
+Read `design.md` and extract:
+
+1. **File Changes table**: Every file that will be created, modified, or deleted.
+   - Categorize each file by its role: type definition, business logic, API handler, database, UI component, test, configuration
+2. **Interfaces and Contracts**: Types that must be defined before implementation.
+3. **Architecture Decisions**: Constraints that affect task ordering.
+4. **Testing Strategy table**: Every test that needs to be written.
+5. **Migration steps**: Database or infrastructure changes.
+6. **Dependencies between files**: Which files must exist before others can be written.
+
+### Step 3: Read Spec Files
+
+Read all spec files and extract:
+
+1. **Requirements list**: Every REQ-{DOMAIN}-{NNN} with its priority (MUST/SHOULD/MAY).
+2. **Scenarios**: Every Given/When/Then scenario (these become test cases).
+3. **Acceptance criteria summary**: The verification checklist.
+4. Map each requirement to the design component that implements it.
+5. Map each scenario to the test file that will verify it.
+
+### Step 4: Read Proposal (if available)
+
+If proposal path is provided, read to extract:
+1. **Success criteria**: The ultimate verification checklist.
+2. **Rollback plan**: Influences cleanup tasks.
+3. **Out-of-scope items**: Ensures tasks do not accidentally include excluded work.
+
+### Step 5: Bottom-Up Phase Assignment
+
+Assign tasks to numbered phases following a strict **bottom-up** philosophy:
+
+> **Build robust base abstractions first. Make the primitives flawless so the high-level logic becomes trivial.**
+
+- Phase 1 contains the lowest-level work: types, schemas, config, shared utilities — things with zero internal dependencies.
+- Each subsequent phase builds on the previous: business logic consumes types, API/UI consumes business logic, tests consume implementations, cleanup finalizes.
+- Create as many or as few phases as the change requires. A 2-file bugfix might need 2 phases; a full-stack feature might need 6.
+- No task may reference a file created in a later phase — if it does, reorder.
+- The final phase must always include running the full verification suite and confirming proposal success criteria.
+
+### Step 6: Write Individual Tasks
+
+Each task must follow this format:
+
+```markdown
+- [ ] {Phase}.{Number} {Action verb} — {specific file path}, {specific change description}
+```
+
+Task quality standards:
+
+| Criterion     | Rule                                                              |
+|---------------|-------------------------------------------------------------------|
+| Specific      | References a single file or tightly related pair (source + test)  |
+| Actionable    | Starts with a verb: Create, Add, Modify, Update, Remove, Wire    |
+| Verifiable    | Has a clear "done" state (file exists, test passes, type checks)  |
+| Small          | Completable in one sdd-apply batch (roughly 1 file or logical unit) |
+| Ordered       | Dependencies are respected (no task references an uncreated file) |
+
+Action verbs: Create (new file), Add (to existing file), Modify (change signature), Update (config/wiring), Remove (delete), Wire (connect modules), Test (write tests), Verify (run checks), Migrate (DB/data).
+
+#### Task Completion States
+
+- `[ ]` Pending — not started
+- `[x]` Complete — fully implemented and verified
+- `[~]` Partial — started but not finished. Remaining work listed in apply-report.md. Counts as 0.5 for metrics. Re-run `/sdd-apply` for the same phase before advancing.
+
+### Step 7: Mark Parallelizable Tasks
+
+Within each phase, mark tasks that can run in parallel using blockquotes:
+
+```markdown
+> Tasks 2.1-2.3 can run in parallel.
+- [ ] 2.1 Create — /abs/path/to/auth.service.ts, implement token exchange
+- [ ] 2.2 Create — /abs/path/to/oauth.repository.ts, implement account storage
+> Task 2.3 depends on 2.1 and 2.2.
+- [ ] 2.3 Modify — /abs/path/to/user.service.ts, add linkOAuthAccount method
+```
+
+### Step 8: Add Requirement Traceability
+
+For each testing task, reference the spec requirement it verifies:
+
+```markdown
+- [ ] 4.1 Test — /abs/path/to/auth.service.test.ts, test OAuth2 token exchange (REQ-AUTH-001, REQ-AUTH-002)
+- [ ] 4.2 Test — /abs/path/to/oauth.validator.test.ts, test callback validation (REQ-AUTH-003)
+- [ ] 4.3 Test — /abs/path/to/auth.api.test.ts, test /api/auth/oauth/callback endpoint (REQ-AUTH-001 scenario 2)
+```
+
+### Step 9: Write tasks.md
+
+Create `openspec/changes/{change_name}/tasks.md`:
+
+```markdown
+# Implementation Tasks: {Change Name (title case)}
+
+**Change**: {change_name}
+**Date**: {ISO 8601 timestamp}
+**Status**: pending
+**Depends On**: design.md, specs/
+
+---
+
+## Summary
+
+- **Total Tasks**: {count}
+- **Phases**: {N}
+- **Estimated Files Changed**: {count from design}
+- **Test Cases Planned**: {count from specs}
+
+## Verification Commands
+
+After each phase, run the project's typecheck, lint, and test commands (detected from `openspec/config.yaml`, `CLAUDE.md`, or `package.json` scripts). All must pass with zero errors.
+
+---
+
+## Phase {N}: {Phase Name} ({N} tasks)
+
+{Description of what this phase accomplishes}
+
+> Parallelizable: {list task numbers, or "All tasks are sequential"}
+
+- [ ] {N}.1 {Action} — {file path}, {description}
+- [ ] {N}.2 {Action} — {file path}, {description}
+...
+
+**Phase {N} Checkpoint**: {What should be true after this phase completes}
+
+---
+
+{Repeat for each phase. The number and names of phases are determined by bottom-up analysis, not a fixed template.}
+
+---
+
+## Requirement Traceability Matrix
+
+| Requirement ID      | Task(s)            | Test Task(s)       | Status  |
+|---------------------|--------------------|--------------------|---------|
+| REQ-{DOMAIN}-001    | 2.1, 3.1           | 4.1                | pending |
+| REQ-{DOMAIN}-002    | 2.2                | 4.2                | pending |
+| REQ-{DOMAIN}-003    | 2.3, 3.2           | 4.3, 4.4           | pending |
+
+## Success Criteria Checklist
+
+From the proposal, all must be true when tasks are complete:
+
+- [ ] {Criterion 1 from proposal}
+- [ ] {Criterion 2 from proposal}
+- [ ] {Criterion 3 from proposal}
+- [ ] All delta specs pass (scenarios verified by tests)
+- [ ] No type/build errors (project's check command passes)
+- [ ] No lint errors (project's lint command passes)
+- [ ] All tests pass (project's test command passes)
+```
+
+### Step 10: Validate Task Completeness
+
+Before returning, validate:
+
+1. **Every file in the design's File Changes table** has at least one task.
+2. **Every requirement from specs** appears in the traceability matrix.
+3. **Every requirement has at least one test task** mapping to it.
+4. **Phase ordering respects dependencies** (no task references a file created in a later phase).
+5. **Task numbering is sequential** within each phase (1.1, 1.2, ..., 2.1, 2.2, ...).
+6. **No task is too large** (modifying more than 2-3 closely related files).
+7. **Phase checkpoints are specific** (not "things work" but "typecheck passes, auth.service.ts exports all required functions").
+8. **Success criteria from proposal** are all included in the final checklist.
+9. **Cleanup phase includes spec merging** (moving delta specs to openspec/specs/ after verification).
+
+### Step 11: Present Summary
+
+Present a markdown summary to the user, then STOP. Do not proceed automatically.
+
+**On success, output:**
+
+```markdown
+## SDD Tasks: {change_name}
+
+**Total tasks**: {N}  |  **Requirement coverage**: {coverage_percent}%
+
+### Tasks Written
+`openspec/changes/{change_name}/tasks.md`
+
+### Tasks by Phase
+| Phase | Tasks | Parallelizable |
+|-------|-------|---------------|
+| {1}: {Name} | {N} | {N} |
+| ... | ... | ... |
+
+### Coverage
+- **Files in design**: {N}  →  **Files with tasks**: {N}  ({coverage_percent}%)
+- **Requirements in specs**: {N}  →  **With tasks**: {N}  →  **With tests**: {N}
+
+{If warnings: ### ⚠ Warnings\n- {warning}\n}
+
+**Next step**: Review `openspec/changes/{change_name}/tasks.md`. When ready, run `/sdd-apply --phase 1` to begin implementation (start a fresh session with `/clear` first).
+```
+
+## Rules and Constraints
+
+1. **Tasks MUST reference specific file paths** from design.md. No vague "update the auth module" tasks.
+2. **Each task should be completable in one sdd-apply batch** -- roughly one file or one tightly related logical unit.
+3. **Phases follow strict bottom-up ordering.** No task may reference a file created in a later phase.
+4. **Use hierarchical numbering**: 1.1, 1.2, 2.1, 2.2. This enables precise references ("complete task 2.3").
+5. **Tasks depend on BOTH specs AND design.** Never generate tasks before both are complete.
+6. **Include testing tasks that map to spec scenarios.** Every MUST requirement needs a test task.
+7. **Mark parallelizable tasks explicitly** within each phase. This enables efficient parallel implementation.
+8. **Include verification checkpoints** after each phase. These are not optional -- they catch issues early.
+9. **All file paths must be absolute.** Never use relative paths.
+10. **Never modify source code.** Task artifacts go in `openspec/changes/{change_name}/`.
+11. **The traceability matrix must be complete.** Every requirement maps to implementation tasks and test tasks.
+12. **Respect the project's task-size conventions.** If a file is being created with many functions, consider splitting into multiple tasks (e.g., "Create file with type exports" then "Add validation functions to file").
+13. **Testing tasks should follow project test conventions** (per CLAUDE.md and framework SKILLs — test grouping, assertion patterns, Arrange/Act/Assert).
+14. **The final cleanup task must always include running the full verification suite** as defined in `openspec/config.yaml`.
+15. **TEST GENERATION POLICY**: Do NOT generate speculative test tasks. ONLY include test tasks if: (A) A spec scenario requires verification via a specific test file (referenced in the Testing Strategy), (B) The design's Testing Strategy table maps a requirement to a test, OR (C) The task explicitly starts with "Test — ...". Do not add test tasks for "just in case" coverage.
+
+## Error Handling
+
+- If `openspec/config.yaml` does not exist: return `status: error` recommending `sdd-init`.
+- If `design.md` does not exist: return `status: error` with message "Design must be complete before generating tasks."
+- If no spec files exist: return `status: error` with message "Specs must be complete before generating tasks."
+- If design and specs are inconsistent (design mentions files not covered by specs, or vice versa): warn but proceed, noting gaps.
+- All errors include the phase name (`tasks`) and a human-readable message.
+
+## PARCER Contract
+
+```yaml
+phase: tasks
+preconditions:
+  - spec files exist in openspec/changes/{changeName}/specs/
+  - design.md exists at openspec/changes/{changeName}/
+postconditions:
+  - tasks.md written with ≥1 phase containing ≥1 task
+  - each task references a spec scenario or design component
+  - tasks.md contains ≥1 task across ≥1 phase
+```
+
+
+--- CHANGE ---
+
+Name: concurrency-performance
+Description: Phase 4 concurrency and performance — lazy artifact loading via csync.LazySlice, pub/sub event broker to decouple state machine from side effects, pprof profiling gate behind env var
+
+--- SPECIFICATIONS ---
+
+### spec.md
+
+# Spec: Concurrency and Performance
+
+**Change ID**: concurrency-performance
+**Date**: 2026-03-21
+**Status**: draft
+
+---
+
+## Domain 1: csync (LazySlice)
+
+Package `internal/csync` provides a generic bounded-concurrency primitive for fanning out I/O loaders (file reads, git exec) used by the 8 assembler functions in `internal/context/`.
+
+### REQ-CSYNC-001: LazySlice Generic Type
+
+`LazySlice[T]` MUST be a generic struct parameterized over result type `T`. It MUST accept a slice of loader functions with signature `func() (T, error)` at construction time. The constructor MUST be `NewLazySlice[T](loaders []func() (T, error)) *LazySlice[T]`.
+
+#### Scenario: Construction with loaders · `code-based` · `critical`
+- **WHEN** `NewLazySlice[[]byte]` is called with 5 loader functions
+- **THEN** a non-nil `*LazySlice[[]byte]` is returned with `Len() == 5`
+
+#### Scenario: Construction with empty slice · `code-based` · `critical`
+- **WHEN** `NewLazySlice[string]` is called with an empty slice
+- **THEN** a non-nil `*LazySlice[string]` is returned with `Len() == 0`
+
+#### Scenario: Construction with nil slice · `code-based` · `critical`
+- **WHEN** `NewLazySlice[int]` is called with `nil`
+- **THEN** a non-nil `*LazySlice[int]` is returned with `Len() == 0`
+
+### REQ-CSYNC-002: Bounded Goroutine Pool
+
+`LoadAll()` MUST fan out loader execution across goroutines. The number of concurrent goroutines MUST NOT exceed `min(runtime.NumCPU(), 8)`. This bound prevents goroutine explosion on machines with many cores or when assemblers load many files.
+
+#### Scenario: Goroutine bound respected · `code-based` · `critical`
+- **GIVEN** `runtime.NumCPU()` returns 16
+- **WHEN** `LoadAll()` is called on a `LazySlice` with 20 loaders
+- **THEN** at no point during execution do more than 8 loader goroutines run concurrently
+
+#### Scenario: Goroutine bound on low-core machine · `code-based` · `important`
+- **GIVEN** `runtime.NumCPU()` returns 2
+- **WHEN** `LoadAll()` is called on a `LazySlice` with 10 loaders
+- **THEN** at no point during execution do more than 2 loader goroutines run concurrently
+
+#### Scenario: Fewer loaders than bound · `code-based` · `important`
+- **WHEN** `LoadAll()` is called on a `LazySlice` with 3 loaders and bound is 8
+- **THEN** all 3 loaders execute concurrently (no unnecessary serialization)
+
+### REQ-CSYNC-003: LoadAll Blocks Until Completion
+
+`LoadAll()` MUST block the calling goroutine until every loader has either returned a value or an error. After `LoadAll()` returns, results MUST be accessible by index via `Get(i int) (T, error)`.
+
+#### Scenario: All loaders complete successfully · `code-based` · `critical`
+- **WHEN** `LoadAll()` is called on a `LazySlice` with 5 loaders that each return distinct values
+- **THEN** `LoadAll()` returns nil, and `Get(0)` through `Get(4)` each return the corresponding loader's value with nil error
+
+#### Scenario: Result ordering matches input ordering · `code-based` · `critical`
+- **WHEN** loaders are provided in order [A, B, C] and loader B completes before A
+- **THEN** `Get(0)` returns A's result, `Get(1)` returns B's result, `Get(2)` returns C's result (positional, not arrival-order)
+
+#### Scenario: LoadAll on empty slice · `code-based` · `important`
+- **WHEN** `LoadAll()` is called on a `LazySlice` with 0 loaders
+- **THEN** `LoadAll()` returns nil immediately
+
+### REQ-CSYNC-004: Per-Element Error Handling
+
+Individual loader failures MUST NOT prevent other loaders from completing. `LoadAll()` MUST return a non-nil error if any loader failed. Each element's error MUST be retrievable independently via `Get(i)`.
+
+#### Scenario: Partial failure · `code-based` · `critical`
+- **WHEN** `LoadAll()` is called with loaders [ok, fail, ok] where loader 1 returns an error
+- **THEN** `LoadAll()` returns a non-nil error, `Get(0)` returns (value, nil), `Get(1)` returns (zero, error), `Get(2)` returns (value, nil)
+
+#### Scenario: All loaders fail · `code-based` · `important`
+- **WHEN** `LoadAll()` is called with 3 loaders that all return errors
+- **THEN** `LoadAll()` returns a non-nil error, and `Get(0)`, `Get(1)`, `Get(2)` each return their respective errors
+
+#### Scenario: Error message includes failed count · `code-based` · `important`
+- **WHEN** 2 of 5 loaders fail
+- **THEN** the error returned by `LoadAll()` indicates "2/5" or equivalent count information
+
+### REQ-CSYNC-005: Thread Safety
+
+`LazySlice` MUST be safe for concurrent use. Running tests with `-race` MUST produce zero data race reports. Internal state (result slots, error slots) MUST be written only by the owning goroutine and read only after `LoadAll()` returns.
+
+#### Scenario: No data races under race detector · `code-based` · `critical`
+- **WHEN** `go test -race ./internal/csync/...` is executed
+- **THEN** the race detector reports zero warnings
+
+#### Scenario: Concurrent LoadAll calls on different instances · `code-based` · `important`
+- **WHEN** two `LazySlice` instances call `LoadAll()` concurrently from separate goroutines
+- **THEN** both complete without data races and return correct results
+
+### REQ-CSYNC-006: Zero Goroutine Leak
+
+`LoadAll()` MUST NOT leak goroutines regardless of loader outcomes. All goroutines spawned by `LoadAll()` MUST have exited by the time `LoadAll()` returns. This applies to normal completion, partial errors, and loader panics.
+
+#### Scenario: No leak on success · `code-based` · `critical`
+- **WHEN** `LoadAll()` completes with all loaders succeeding
+- **THEN** `runtime.NumGoroutine()` after `LoadAll()` returns is equal to or less than the count before `LoadAll()` was called (within a small delta for runtime goroutines)
+
+#### Scenario: No leak on partial failure · `code-based` · `critical`
+- **WHEN** `LoadAll()` completes with some loaders returning errors
+- **THEN** goroutine count returns to baseline after `LoadAll()` returns
+
+#### Scenario: Loader panic recovery · `code-based` · `critical`
+- **WHEN** a loader function panics during `LoadAll()`
+- **THEN** the panic is recovered, the corresponding `Get(i)` returns an error containing the panic value, other loaders complete normally, and no goroutine leaks
+
+#### Scenario: No leak on empty slice · `code-based` · `important`
+- **WHEN** `LoadAll()` is called on a `LazySlice` with 0 loaders
+- **THEN** no goroutines are spawned
+
+---
+
+## Domain 2: events (Broker)
+
+Package `internal/events` provides an in-process pub/sub broker that decouples side effects (metrics recording, cache saving, stderr output) from the assembly hot path. Fixes the metrics.json race in `AssembleConcurrent` by serializing all event-driven writes through a single dispatch path.
+
+### REQ-EVENTS-001: Broker Type with Subscribe and Emit
+
+`Broker` MUST provide `Subscribe(eventType string, handler func(Event))` for registering handlers and `Emit(event Event)` for dispatching. `Event` MUST be an interface or struct carrying at minimum `Type() string` for dispatch routing.
+
+#### Scenario: Subscribe and emit single event · `code-based` · `critical`
+- **WHEN** a handler is subscribed to "PhaseAssembled" and an event of type "PhaseAssembled" is emitted
+- **THEN** the handler is called exactly once with the emitted event
+
+#### Scenario: Multiple subscribers for same event type · `code-based` · `critical`
+- **WHEN** two handlers are subscribed to "CacheHit" and a "CacheHit" event is emitted
+- **THEN** both handlers are called exactly once each
+
+#### Scenario: Handler not called for non-matching event type · `code-based` · `important`
+- **WHEN** a handler is subscribed to "CacheHit" and a "CacheMiss" event is emitted
+- **THEN** the handler is not called
+
+#### Scenario: No subscribers for event type · `code-based` · `important`
+- **WHEN** an event is emitted with no subscribers registered for its type
+- **THEN** `Emit` completes without error and does not panic
+
+### REQ-EVENTS-002: Event Types
+
+The following typed event structs MUST be defined, each satisfying the `Event` interface:
+
+- `PhaseAssembled` — emitted after `Assemble()` completes (cache hit or fresh assembly). MUST carry: phase name, byte count, token estimate, cached flag, duration.
+- `CacheHit` — emitted when `tryCachedContext` returns cached content. MUST carry: phase name, byte count.
+- `CacheMiss` — emitted when `tryCachedContext` returns no cached content. MUST carry: phase name.
+- `ArtifactPromoted` — emitted when `runWrite()` promotes a pending artifact. MUST carry: change name, phase name, promoted file path.
+- `StateAdvanced` — emitted when `runWrite()` advances the state machine. MUST carry: change name, from-phase, to-phase.
+
+#### Scenario: PhaseAssembled carries required fields · `code-based` · `critical`
+- **WHEN** `Assemble()` completes for the "review" phase
+- **THEN** the emitted `PhaseAssembled` event has `Phase == "review"`, `Bytes > 0`, `Tokens > 0`, `DurationMs >= 0`, and `Cached` is a valid boolean
+
+#### Scenario: CacheHit carries byte count · `code-based` · `important`
+- **GIVEN** a cached context exists for the "spec" phase
+- **WHEN** `Assemble()` is called for "spec"
+- **THEN** a `CacheHit` event is emitted with `Phase == "spec"` and `Bytes > 0`
+
+#### Scenario: CacheMiss emitted on fresh assembly · `code-based` · `important`
+- **GIVEN** no cached context exists for the "explore" phase
+- **WHEN** `Assemble()` is called for "explore"
+- **THEN** a `CacheMiss` event is emitted with `Phase == "explore"`
+
+#### Scenario: ArtifactPromoted carries promoted path · `code-based` · `critical`
+- **WHEN** `runWrite()` promotes a pending artifact for the "design" phase
+- **THEN** an `ArtifactPromoted` event is emitted with the promoted file path
+
+#### Scenario: StateAdvanced carries phase transition · `code-based` · `critical`
+- **WHEN** `runWrite()` advances state from "design" to "tasks"
+- **THEN** a `StateAdvanced` event is emitted with `FromPhase == "design"` and `ToPhase == "tasks"`
+
+### REQ-EVENTS-003: Subscriber Panic Recovery
+
+A panicking subscriber MUST NOT crash the CLI process. `Emit()` MUST wrap each subscriber call in `defer recover()`. The panic SHOULD be logged to stderr. Other subscribers for the same event MUST still execute.
+
+#### Scenario: Panicking subscriber does not crash · `code-based` · `critical`
+- **WHEN** a subscriber panics during `Emit()`
+- **THEN** `Emit()` completes without propagating the panic to the caller
+
+#### Scenario: Other subscribers still execute after panic · `code-based` · `critical`
+- **GIVEN** three subscribers for "PhaseAssembled" where the second panics
+- **WHEN** a "PhaseAssembled" event is emitted
+- **THEN** the first and third subscribers are called; only the second's execution is interrupted
+
+#### Scenario: Panic message logged to stderr · `code-based` · `important`
+- **WHEN** a subscriber panics with message "oops"
+- **THEN** stderr output contains "oops" or equivalent diagnostic information
+
+### REQ-EVENTS-004: Serialized Dispatch
+
+`Emit()` MUST serialize subscriber dispatch so that concurrent `Emit()` calls from different goroutines (as in `AssembleConcurrent`) do not cause data races in subscriber state. This fixes the current race where two goroutines in `AssembleConcurrent` concurrently call `recordMetrics()` which reads, modifies, and writes `metrics.json`.
+
+#### Scenario: Concurrent emits do not race · `code-based` · `critical`
+- **WHEN** 10 goroutines each call `Emit()` simultaneously, each targeting a subscriber that writes to a shared counter
+- **THEN** `go test -race` reports zero data races, and the final counter value equals 10
+
+#### Scenario: Serialized dispatch preserves ordering within single goroutine · `code-based` · `important`
+- **WHEN** a single goroutine emits events A then B in sequence
+- **THEN** the subscriber for A completes before the subscriber for B begins
+
+#### Scenario: Metrics.json not corrupted under concurrent assembly · `code-based` · `critical`
+- **GIVEN** `recordMetrics` is wired as an event subscriber
+- **WHEN** `AssembleConcurrent` runs spec and design phases in parallel, each emitting `PhaseAssembled`
+- **THEN** `metrics.json` contains valid JSON with entries for both phases and no data loss
+
+### REQ-EVENTS-005: Nil-Safe Broker
+
+A nil `*Broker` MUST be safe to call `Emit()` on. This allows callers (e.g., `Assemble()`, `runWrite()`) to emit events without nil-checking, and allows tests that don't set a broker to continue working.
+
+#### Scenario: Nil broker emit is no-op · `code-based` · `critical`
+- **WHEN** `Emit()` is called on a nil `*Broker`
+- **THEN** the call returns immediately without panic
+
+#### Scenario: Nil broker subscribe is no-op · `code-based` · `important`
+- **WHEN** `Subscribe()` is called on a nil `*Broker`
+- **THEN** the call returns immediately without panic
+
+#### Scenario: Existing tests pass without broker · `code-based` · `critical`
+- **GIVEN** `Params.Broker` is not set (zero value nil)
+- **WHEN** `Assemble()` is called
+- **THEN** assembly completes successfully, no panic, no events emitted
+
+### REQ-EVENTS-006: Integration with Assemble and runWrite
+
+`Assemble()` in `context.go` MUST emit `CacheHit` or `CacheMiss` and `PhaseAssembled` events via the broker on `Params`. `runWrite()` in `commands.go` MUST emit `ArtifactPromoted` and `StateAdvanced` events. The broker MUST be injected via a new `Broker *events.Broker` field on `Params`.
+
+#### Scenario: Assemble emits CacheHit on cached context · `code-based` · `critical`
+- **GIVEN** a valid cached context exists for the "propose" phase
+- **WHEN** `Assemble()` is called with a broker that records events
+- **THEN** the recorder contains exactly one `CacheHit` and one `PhaseAssembled` event for "propose"
+
+#### Scenario: Assemble emits CacheMiss on fresh assembly · `code-based` · `critical`
+- **GIVEN** no cached context for the "explore" phase
+- **WHEN** `Assemble()` is called with a broker that records events
+- **THEN** the recorder contains exactly one `CacheMiss` and one `PhaseAssembled` event for "explore"
+
+#### Scenario: runWrite emits both events · `code-based` · `critical`
+- **WHEN** `runWrite()` successfully promotes and advances for the "spec" phase
+- **THEN** the broker has received one `ArtifactPromoted` and one `StateAdvanced` event
+
+#### Scenario: Broker field on Params is backward compatible · `code-based` · `critical`
+- **WHEN** `Params{}` is constructed without setting the `Broker` field
+- **THEN** the zero-value `Broker` field is nil, and `Assemble()` skips event emission
+
+---
+
+## Domain 3: pprof (Profiling Gate)
+
+An environment-variable-gated profiling hook in `cmd/sdd/main.go` that enables CPU and heap profiling to file. Zero overhead when unset.
+
+### REQ-PPROF-001: SDD_PPROF Environment Variable
+
+The `main()` function MUST check `os.Getenv("SDD_PPROF")` before calling `cli.Run()`. Recognized values: `"cpu"`, `"mem"`, `"all"`. Any other non-empty value SHOULD be treated as unrecognized and logged to stderr as a warning. Empty or unset MUST result in no profiling and zero overhead.
+
+#### Scenario: SDD_PPROF=cpu enables CPU profiling · `code-based` · `critical`
+- **GIVEN** `SDD_PPROF` is set to `"cpu"`
+- **WHEN** `sdd` runs and exits
+- **THEN** `sdd-cpu.prof` is created in the current working directory
+
+#### Scenario: SDD_PPROF=mem enables memory profiling · `code-based` · `critical`
+- **GIVEN** `SDD_PPROF` is set to `"mem"`
+- **WHEN** `sdd` runs and exits
+- **THEN** `sdd-mem.prof` is created in the current working directory
+
+#### Scenario: SDD_PPROF=all enables both profiles · `code-based` · `critical`
+- **GIVEN** `SDD_PPROF` is set to `"all"`
+- **WHEN** `sdd` runs and exits
+- **THEN** both `sdd-cpu.prof` and `sdd-mem.prof` are created in the current working directory
+
+#### Scenario: SDD_PPROF unset means no profiling · `code-based` · `critical`
+- **GIVEN** `SDD_PPROF` is not set
+- **WHEN** `sdd` runs and exits
+- **THEN** no `sdd-cpu.prof` or `sdd-mem.prof` files are created
+
+#### Scenario: Unrecognized value warns · `code-based` · `important`
+- **GIVEN** `SDD_PPROF` is set to `"trace"`
+- **WHEN** `sdd` runs
+- **THEN** stderr contains a warning about the unrecognized value, and no profiling is enabled
+
+### REQ-PPROF-002: Profile File Output
+
+CPU profile MUST be written to `sdd-cpu.prof` and heap profile to `sdd-mem.prof`, both in the current working directory. These follow the CWD convention established by the crash log in `main.go` (line 17: `.sdd-crash-{ts}.log`).
+
+#### Scenario: CPU profile is valid pprof format · `code-based` · `critical`
+- **GIVEN** `SDD_PPROF=cpu` and `sdd` has completed execution
+- **WHEN** `go tool pprof sdd-cpu.prof` is invoked
+- **THEN** the tool loads the profile without errors
+
+#### Scenario: Heap profile is valid pprof format · `code-based` · `critical`
+- **GIVEN** `SDD_PPROF=mem` and `sdd` has completed execution
+- **WHEN** `go tool pprof sdd-mem.prof` is invoked
+- **THEN** the tool loads the profile without errors
+
+#### Scenario: Profile file is written even on CLI error · `code-based` · `important`
+- **GIVEN** `SDD_PPROF=cpu`
+- **WHEN** `sdd` exits with a non-zero exit code due to a CLI error
+- **THEN** `sdd-cpu.prof` is still written (profiling stop is in a `defer`)
+
+#### Scenario: Profile file overwrite on re-run · `code-based` · `important`
+- **GIVEN** `sdd-cpu.prof` already exists from a previous run
+- **WHEN** `sdd` runs again with `SDD_PPROF=cpu`
+- **THEN** `sdd-cpu.prof` is overwritten with the new profile data
+
+### REQ-PPROF-003: Zero Overhead When Unset
+
+When `SDD_PPROF` is not set or empty, the profiling gate MUST NOT call any `runtime/pprof` functions, MUST NOT open any files, and MUST NOT allocate profiling-related buffers. The check MUST be a single `os.Getenv` call with an early return.
+
+#### Scenario: No pprof imports executed when unset · `code-based` · `critical`
+- **GIVEN** `SDD_PPROF` is not set
+- **WHEN** `main()` executes
+- **THEN** no `pprof.StartCPUProfile`, `pprof.WriteHeapProfile`, or `os.Create` calls for profile files occur
+
+#### Scenario: Startup latency unaffected · `code-based` · `important`
+- **GIVEN** `SDD_PPROF` is not set
+- **WHEN** `sdd version` is timed over 10 runs
+- **THEN** mean execution time does not increase by more than 1ms compared to baseline (within measurement noise)
+
+### REQ-PPROF-004: Doctor Check for Pprof
+
+`sdd doctor` MUST include a check that reports the current `SDD_PPROF` value if set, or "not set (no profiling)" if unset. This is informational only and SHOULD always return status "pass" (never "fail").
+
+#### Scenario: Doctor reports SDD_PPROF when set · `code-based` · `important`
+- **GIVEN** `SDD_PPROF=cpu`
+- **WHEN** `sdd doctor` runs
+- **THEN** output includes a check named "pprof" with status "pass" and message indicating `SDD_PPROF=cpu`
+
+#### Scenario: Doctor reports pprof not set · `code-based` · `important`
+- **GIVEN** `SDD_PPROF` is not set
+- **WHEN** `sdd doctor` runs
+- **THEN** output includes a check named "pprof" with status "pass" and message "not set (no profiling)" or equivalent
+
+---
+
+## Eval Definitions
+
+| Scenario | Eval Type | Criticality | Threshold |
+|----------|-----------|-------------|-----------|
+| Construction with loaders | unit test | critical | PASS |
+| Construction with empty slice | unit test | critical | PASS |
+| Construction with nil slice | unit test | critical | PASS |
+| Goroutine bound respected | unit test | critical | PASS |
+| Goroutine bound on low-core machine | unit test | important | PASS |
+| Fewer loaders than bound | unit test | important | PASS |
+| All loaders complete successfully | unit test | critical | PASS |
+| Result ordering matches input ordering | unit test | critical | PASS |
+| LoadAll on empty slice | unit test | important | PASS |
+| Partial failure | unit test | critical | PASS |
+| All loaders fail | unit test | important | PASS |
+| Error message includes failed count | unit test | important | PASS |
+| No data races under race detector | unit test + race | critical | PASS |
+| Concurrent LoadAll calls on different instances | unit test + race | important | PASS |
+| No leak on success | unit test | critical | goroutine delta <= 2 |
+| No leak on partial failure | unit test | critical | goroutine delta <= 2 |
+| Loader panic recovery | unit test | critical | PASS |
+| No leak on empty slice | unit test | important | PASS |
+| Subscribe and emit single event | unit test | critical | PASS |
+| Multiple subscribers for same event type | unit test | critical | PASS |
+| Handler not called for non-matching event type | unit test | important | PASS |
+| No subscribers for event type | unit test | important | PASS |
+| PhaseAssembled carries required fields | integration test | critical | PASS |
+| CacheHit carries byte count | integration test | important | PASS |
+| CacheMiss emitted on fresh assembly | integration test | important | PASS |
+| ArtifactPromoted carries promoted path | integration test | critical | PASS |
+| StateAdvanced carries phase transition | integration test | critical | PASS |
+| Panicking subscriber does not crash | unit test | critical | PASS |
+| Other subscribers still execute after panic | unit test | critical | PASS |
+| Panic message logged to stderr | unit test | important | PASS |
+| Concurrent emits do not race | unit test + race | critical | PASS |
+| Serialized dispatch preserves ordering | unit test | important | PASS |
+| Metrics.json not corrupted under concurrent assembly | integration test + race | critical | valid JSON |
+| Nil broker emit is no-op | unit test | critical | PASS |
+| Nil broker subscribe is no-op | unit test | important | PASS |
+| Existing tests pass without broker | integration test | critical | PASS |
+| Assemble emits CacheHit on cached context | integration test | critical | PASS |
+| Assemble emits CacheMiss on fresh assembly | integration test | critical | PASS |
+| runWrite emits both events | integration test | critical | PASS |
+| Broker field on Params is backward compatible | unit test | critical | PASS |
+| SDD_PPROF=cpu enables CPU profiling | integration test | critical | file exists |
+| SDD_PPROF=mem enables memory profiling | integration test | critical | file exists |
+| SDD_PPROF=all enables both profiles | integration test | critical | files exist |
+| SDD_PPROF unset means no profiling | integration test | critical | files absent |
+| Unrecognized value warns | integration test | important | stderr contains warning |
+| CPU profile is valid pprof format | integration test | critical | pprof loads |
+| Heap profile is valid pprof format | integration test | critical | pprof loads |
+| Profile file is written even on CLI error | integration test | important | file exists |
+| Profile file overwrite on re-run | integration test | important | file modified time changes |
+| No pprof imports executed when unset | code review | critical | PASS |
+| Startup latency unaffected | benchmark | important | delta < 1ms |
+| Doctor reports SDD_PPROF when set | integration test | important | PASS |
+| Doctor reports pprof not set | integration test | important | PASS |
+
+## Acceptance Criteria Summary
+
+| Requirement ID | Type | Priority | Scenarios |
+|----------------|------|----------|-----------|
+| REQ-CSYNC-001 | Functional | P0 | Construction with loaders, Construction with empty slice, Construction with nil slice |
+| REQ-CSYNC-002 | Performance | P0 | Goroutine bound respected, Goroutine bound on low-core machine, Fewer loaders than bound |
+| REQ-CSYNC-003 | Functional | P0 | All loaders complete successfully, Result ordering matches input ordering, LoadAll on empty slice |
+| REQ-CSYNC-004 | Functional | P0 | Partial failure, All loaders fail, Error message includes failed count |
+| REQ-CSYNC-005 | Non-functional | P0 | No data races under race detector, Concurrent LoadAll calls on different instances |
+| REQ-CSYNC-006 | Reliability | P0 | No leak on success, No leak on partial failure, Loader panic recovery, No leak on empty slice |
+| REQ-EVENTS-001 | Functional | P0 | Subscribe and emit single event, Multiple subscribers for same event type, Handler not called for non-matching event type, No subscribers for event type |
+| REQ-EVENTS-002 | Functional | P0 | PhaseAssembled carries required fields, CacheHit carries byte count, CacheMiss emitted on fresh assembly, ArtifactPromoted carries promoted path, StateAdvanced carries phase transition |
+| REQ-EVENTS-003 | Reliability | P0 | Panicking subscriber does not crash, Other subscribers still execute after panic, Panic message logged to stderr |
+| REQ-EVENTS-004 | Non-functional | P0 | Concurrent emits do not race, Serialized dispatch preserves ordering, Metrics.json not corrupted under concurrent assembly |
+| REQ-EVENTS-005 | Reliability | P0 | Nil broker emit is no-op, Nil broker subscribe is no-op, Existing tests pass without broker |
+| REQ-EVENTS-006 | Integration | P0 | Assemble emits CacheHit on cached context, Assemble emits CacheMiss on fresh assembly, runWrite emits both events, Broker field on Params is backward compatible |
+| REQ-PPROF-001 | Functional | P0 | SDD_PPROF=cpu enables CPU profiling, SDD_PPROF=mem enables memory profiling, SDD_PPROF=all enables both profiles, SDD_PPROF unset means no profiling, Unrecognized value warns |
+| REQ-PPROF-002 | Functional | P0 | CPU profile is valid pprof format, Heap profile is valid pprof format, Profile file is written even on CLI error, Profile file overwrite on re-run |
+| REQ-PPROF-003 | Performance | P1 | No pprof imports executed when unset, Startup latency unaffected |
+| REQ-PPROF-004 | Informational | P2 | Doctor reports SDD_PPROF when set, Doctor reports pprof not set |
+
+
+--- DESIGN ---
+
+# Technical Design: Concurrency and Performance
+
+**Change**: concurrency-performance
+**Date**: 2026-03-21
+**Status**: draft
+**Depends On**: proposal.md, spec.md
+
+---
+
+## 1. Architecture Overview
+
+### Module Graph
+
+```
+cmd/sdd/main.go
+  |
+  |  SDD_PPROF gate (new)
+  |  runtime/pprof start/stop
+  |
+  v
+internal/cli/commands.go
+  |
+  |  creates events.Broker (new)
+  |  wires Broker into Params
+  |  emits ArtifactPromoted, StateAdvanced from runWrite()
+  |
+  v
+internal/context/context.go
+  |
+  |  Params.Broker field (new)
+  |  Assemble() emits CacheHit/CacheMiss/PhaseAssembled
+  |
+  +---> internal/events/broker.go  (NEW PACKAGE)
+  |       Broker, Event, EventType
+  |       Subscribe(), Emit()
+  |       sync.Mutex serialized dispatch
+  |
+  +---> internal/csync/lazyslice.go  (NEW PACKAGE)
+  |       LazySlice[T]
+  |       bounded worker pool via buffered channel
+  |       sync.WaitGroup + panic recovery
+  |
+  +---> internal/context/{explore,propose,spec,design,tasks,apply,review,clean}.go
+          each assembler uses csync.LazySlice for concurrent I/O
+```
+
+### Dependency Direction
+
+```
+cmd/sdd/main.go
+    |
+    v
+internal/cli  --->  internal/events
+    |                     ^
+    v                     |
+internal/context ---------+
+    |
+    v
+internal/csync   (no upward deps; leaf package)
+```
+
+`internal/csync` and `internal/events` are leaf packages with zero internal dependencies. `internal/context` imports both. `internal/cli` imports `internal/events` (to create the Broker) and `internal/context` (existing).
+
+### Data Flow: Lazy Loading Within an Assembler
+
+```
+AssembleReview(w, p)
+  |
+  |  1. Build []func() ([]byte, error) closures
+  |     [loadSkill, loadSpecs, loadDesign, loadTasks, gitDiff, loadRules]
+  |
+  |  2. ls = csync.NewLazySlice(loaders)
+  |
+  |  3. ls.LoadAll()
+  |     |
+  |     +---> sem <- struct{}{} (acquire from buffered chan, cap=min(NumCPU,8))
+  |     |     go func(i) {
+  |     |       defer wg.Done()
+  |     |       defer func() { <-sem }()  // release
+  |     |       defer recover()           // panic -> error
+  |     |       results[i] = loader()
+  |     |     }
+  |     |
+  |     +---> wg.Wait()  // blocks until all done
+  |
+  |  4. Access results by index:
+  |     skill, err := ls.Get(0)   // loadSkill result
+  |     specs, err := ls.Get(1)   // loadSpecs result
+  |     design, err := ls.Get(2)  // loadDesign result
+  |     ...
+  |
+  |  5. writeSection(w, ...) calls — same order as before
+  v
+  return
+```
+
+### Event Flow: Emitter to Subscriber
+
+```
+Assemble(w, phase, p)
+  |
+  |  cache miss path:
+  |    p.Broker.Emit(Event{Type: CacheMiss, ...})
+  |    fn(&buf, p)   // run assembler
+  |    p.Broker.Emit(Event{Type: PhaseAssembled, ...})
+  |
+  v
+Broker.Emit(event)
+  |
+  |  mu.Lock()            // serialize all dispatches
+  |  handlers := subs[event.Type]
+  |  for _, h := range handlers {
+  |    func() {
+  |      defer recover()  // per-handler panic recovery
+  |      h(event)
+  |    }()
+  |  }
+  |  mu.Unlock()
+  |
+  +---> metricsSubscriber(event)     // was inline recordMetrics()
+  |       recordMetrics(changeDir, m)
+  |
+  +---> stderrSubscriber(event)      // was inline writeMetrics()
+  |       writeMetrics(stderr, m, verbosity)
+  |
+  +---> cacheSubscriber(event)       // was inline saveContextCache()
+          saveContextCache(changeDir, phase, skills, content)
+```
+
+## 2. Package: internal/csync
+
+File: `/home/reche/projects/SDDworkflow/sdd-cli/internal/csync/lazyslice.go`
+
+### Type Definitions
+
+```go
+package csync
+
+import (
+	"fmt"
+	"runtime"
+	"strings"
+	"sync"
+)
+
+// result holds the outcome of a single loader invocation.
+type result[T any] struct {
+	value T
+	err   error
+}
+
+// LazySlice fans out loader functions across a bounded goroutine pool.
+// Results are indexed positionally — Get(i) returns the result of loaders[i]
+// regardless of completion order.
+type LazySlice[T any] struct {
+	results []result[T]
+	loaded  bool
+	err     error // aggregate error from LoadAll
+}
+
+// maxWorkers returns the bounded concurrency limit.
+func maxWorkers() int {
+	n := runtime.NumCPU()
+	if n > 8 {
+		n = 8
+	}
+	return n
+}
+
+// NewLazySlice creates a LazySlice from a slice of loader functions.
+// Does not start any goroutines — call LoadAll() to execute.
+func NewLazySlice[T any](loaders []func() (T, error)) *LazySlice[T] {
+	ls := &LazySlice[T]{
+		results: make([]result[T], len(loaders)),
+	}
+	// Store loaders internally for LoadAll to execute.
+	// We attach them via closure in LoadAll to avoid storing
+	// the slice as a field (it's only needed once).
+	ls.loadAll(loaders)
+	return ls
+}
+```
+
+Wait — per REQ-CSYNC-003, `NewLazySlice` should not call `LoadAll` automatically. The constructor and `LoadAll` are separate. Revised:
+
+```go
+// LazySlice fans out loader functions across a bounded goroutine pool.
+type LazySlice[T any] struct {
+	loaders []func() (T, error)
+	results []result[T]
+	loaded  bool
+}
+
+// NewLazySlice creates a LazySlice. Call LoadAll() to execute loaders.
+func NewLazySlice[T any](loaders []func() (T, error)) *LazySlice[T] {
+	if loaders == nil {
+		loaders = []func() (T, error){}
+	}
+	return &LazySlice[T]{
+		loaders: loaders,
+		results: make([]result[T], len(loaders)),
+	}
+}
+
+// Len returns the number of loader slots.
+func (ls *LazySlice[T]) Len() int {
+	return len(ls.loaders)
+}
+```
+
+### LoadAll Implementation
+
+```go
+// LoadAll executes all loaders concurrently with a bounded worker pool.
+// Blocks until every loader has completed. Returns a non-nil error if
+// any loader failed (individual errors retrievable via Get).
+func (ls *LazySlice[T]) LoadAll() error {
+	if ls.loaded || len(ls.loaders) == 0 {
+		return nil
+	}
+	ls.loaded = true
+
+	workers := maxWorkers()
+	sem := make(chan struct{}, workers) // buffered channel as semaphore
+	var wg sync.WaitGroup
+
+	for i, loader := range ls.loaders {
+		wg.Add(1)
+		sem <- struct{}{} // acquire slot (blocks if pool is full)
+		go func(idx int, fn func() (T, error)) {
+			defer wg.Done()
+			defer func() { <-sem }() // release slot
+
+			// Panic recovery: convert panic to error.
+			defer func() {
+				if r := recover(); r != nil {
+					ls.results[idx] = result[T]{
+						err: fmt.Errorf("loader %d panicked: %v", idx, r),
+					}
+				}
+			}()
+
+			val, err := fn()
+			ls.results[idx] = result[T]{value: val, err: err}
+		}(i, loader)
+	}
+
+	wg.Wait()
+
+	// Build aggregate error if any loaders failed.
+	var failed int
+	var msgs []string
+	for i, r := range ls.results {
+		if r.err != nil {
+			failed++
+			msgs = append(msgs, fmt.Sprintf("loader %d: %v", i, r.err))
+		}
+	}
+	if failed > 0 {
+		ls.err = fmt.Errorf("%d/%d loaders failed: %s",
+			failed, len(ls.loaders), strings.Join(msgs, "; "))
+	}
+
+	return ls.err
+}
+```
+
+**Thread safety note**: Each `results[idx]` slot is written by exactly one goroutine (the one with `idx`). The caller reads results only after `wg.Wait()` returns, establishing a happens-before relationship. No mutex needed on the results slice.
+
+**Semaphore pattern**: The buffered channel `sem` with capacity `min(NumCPU, 8)` limits active goroutines. The `sem <- struct{}{}` in the launching loop (not inside the goroutine) means the launching goroutine blocks when the pool is full, preventing goroutine explosion. The release `<-sem` is in the goroutine's defer, ensuring the slot is freed even on panic.
+
+### Get and MustGet
+
+```go
+// Get returns the result at index i. Panics if i is out of range.
+// Must be called after LoadAll().
+func (ls *LazySlice[T]) Get(i int) (T, error) {
+	return ls.results[i].value, ls.results[i].err
+}
+
+// MustGet returns the value at index i, panicking if the loader returned an error.
+func (ls *LazySlice[T]) MustGet(i int) T {
+	if ls.results[i].err != nil {
+		panic(fmt.Sprintf("csync.LazySlice.MustGet(%d): %v", i, ls.results[i].err))
+	}
+	return ls.results[i].value
+}
+```
+
+## 3. Package: internal/events
+
+File: `/home/reche/projects/SDDworkflow/sdd-cli/internal/events/broker.go`
+
+### Type Definitions
+
+```go
+package events
+
+import (
+	"fmt"
+	"io"
+	"sync"
+)
+
+// EventType identifies the kind of event.
+type EventType string
+
+// Event type constants.
+const (
+	PhaseAssembled   EventType = "PhaseAssembled"
+	CacheHit         EventType = "CacheHit"
+	CacheMiss        EventType = "CacheMiss"
+	ArtifactPromoted EventType = "ArtifactPromoted"
+	StateAdvanced    EventType = "StateAdvanced"
+)
+
+// Event carries a typed payload through the broker.
+type Event struct {
+	Type    EventType
+	Payload any
+}
+
+// PhaseAssembledPayload is the payload for PhaseAssembled events.
+type PhaseAssembledPayload struct {
+	Phase      string
+	Bytes      int
+	Tokens     int
+	Cached     bool
+	DurationMs int64
+	ChangeDir  string
+	SkillsPath string
+	Content    []byte // non-nil only on cache miss (for cache subscriber)
+}
+
+// CacheHitPayload is the payload for CacheHit events.
+type CacheHitPayload struct {
+	Phase string
+	Bytes int
+}
+
+// CacheMissPayload is the payload for CacheMiss events.
+type CacheMissPayload struct {
+	Phase string
+}
+
+// ArtifactPromotedPayload is the payload for ArtifactPromoted events.
+type ArtifactPromotedPayload struct {
+	Change      string
+	Phase       string
+	PromotedTo  string
+}
+
+// StateAdvancedPayload is the payload for StateAdvanced events.
+type StateAdvancedPayload struct {
+	Change    string
+	FromPhase string
+	ToPhase   string
+}
+
+// Handler processes an event.
+type Handler func(Event)
+```
+
+### Broker Implementation
+
+```go
+// Broker dispatches events to registered subscribers.
+// Safe for concurrent Emit() calls from multiple goroutines.
+// A nil *Broker is safe to call Emit() and Subscribe() on (no-op).
+type Broker struct {
+	mu     sync.Mutex
+	subs   map[EventType][]Handler
+	stderr io.Writer // for panic logging
+}
+
+// NewBroker creates a Broker. stderr is used for panic diagnostics.
+func NewBroker(stderr io.Writer) *Broker {
+	return &Broker{
+		subs:   make(map[EventType][]Handler),
+		stderr: stderr,
+	}
+}
+
+// Subscribe registers a handler for the given event type.
+// Nil-safe: calling on a nil *Broker is a no-op.
+func (b *Broker) Subscribe(t EventType, h Handler) {
+	if b == nil {
+		return
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.subs[t] = append(b.subs[t], h)
+}
+
+// Emit dispatches an event to all subscribers for its type.
+// Nil-safe: calling on a nil *Broker is a no-op.
+// Serialized via mutex — concurrent Emit() calls are safe.
+// Each subscriber is called with panic recovery.
+func (b *Broker) Emit(e Event) {
+	if b == nil {
+		return
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	handlers := b.subs[e.Type]
+	for _, h := range handlers {
+		func(handler Handler) {
+			defer func() {
+				if r := recover(); r != nil {
+					if b.stderr != nil {
+						fmt.Fprintf(b.stderr, "sdd: event subscriber panic [%s]: %v\n", e.Type, r)
+					}
+				}
+			}()
+			handler(e)
+		}(h)
+	}
+}
+```
+
+**Serialization**: The `sync.Mutex` in `Emit()` ensures that when `AssembleConcurrent` runs two phases in parallel (context.go:121-164) and both emit `PhaseAssembled`, the metrics subscriber sees them sequentially. This fixes the current race where two goroutines call `recordMetrics()` concurrently (cache.go:274), both reading, modifying, and writing `metrics.json` — a last-writer-wins data loss bug.
+
+**Nil-safe pattern**: Both `Subscribe` and `Emit` check `b == nil` as the first line. This means `Params.Broker` can be left as its zero value (nil) in tests, and all `p.Broker.Emit(...)` calls in `Assemble()` and `runWrite()` are safe without nil guards at the call site.
+
+**Panic recovery**: Each handler is invoked inside its own `func()` with `defer recover()`. If handler 2 of 3 panics, handler 1 has already run and handler 3 will still execute.
+
+## 4. Assembler Refactor Pattern
+
+### Before: AssembleReview (review.go, lines 13-59)
+
+```go
+func AssembleReview(w io.Writer, p *Params) error {
+	skill, err := loadSkill(p.SkillsPath, "sdd-review")
+	if err != nil {
+		return err
+	}
+
+	specs, err := loadSpecs(p.ChangeDir)
+	if err != nil {
+		return fmt.Errorf("review requires spec artifacts: %w", err)
+	}
+
+	design, err := loadArtifact(p.ChangeDir, "design.md")
+	if err != nil {
+		return fmt.Errorf("review requires design artifact: %w", err)
+	}
+
+	tasks, err := loadArtifact(p.ChangeDir, "tasks.md")
+	if err != nil {
+		return fmt.Errorf("review requires tasks artifact: %w", err)
+	}
+
+	diff, err := gitDiff(p.ProjectDir)
+	if err != nil {
+		diff = fmt.Sprintf("(git diff unavailable: %v)", err)
+	}
+
+	// ... writeSection calls ...
+}
+```
+
+### After: AssembleReview with LazySlice
+
+```go
+func AssembleReview(w io.Writer, p *Params) error {
+	// Define loader closures — each captures its required params.
+	loaders := []func() ([]byte, error){
+		func() ([]byte, error) { return loadSkill(p.SkillsPath, "sdd-review") },           // 0: skill
+		func() ([]byte, error) { return []byte(mustLoadSpecs(p.ChangeDir)), nil },          // 1: specs
+		func() ([]byte, error) { return loadArtifact(p.ChangeDir, "design.md") },           // 2: design
+		func() ([]byte, error) { return loadArtifact(p.ChangeDir, "tasks.md") },            // 3: tasks
+		func() ([]byte, error) { return []byte(gitDiffOrFallback(p.ProjectDir)), nil },     // 4: diff
+		func() ([]byte, error) { return loadProjectRulesOptional(p.ProjectDir), nil },      // 5: rules
+	}
+
+	ls := csync.NewLazySlice(loaders)
+	if err := ls.LoadAll(); err != nil {
+		// Check critical loaders (skill, specs, design, tasks).
+		if _, e := ls.Get(0); e != nil {
+			return e
+		}
+		if _, e := ls.Get(1); e != nil {
+			return fmt.Errorf("review requires spec artifacts: %w", e)
+		}
+		if _, e := ls.Get(2); e != nil {
+			return fmt.Errorf("review requires design artifact: %w", e)
+		}
+		if _, e := ls.Get(3); e != nil {
+			return fmt.Errorf("review requires tasks artifact: %w", e)
+		}
+		// Loaders 4 and 5 are non-fatal — fall through.
+	}
+
+	skill, _ := ls.Get(0)
+	specsData, _ := ls.Get(1)
+	design, _ := ls.Get(2)
+	tasks, _ := ls.Get(3)
+	diff, _ := ls.Get(4)
+	rules, _ := ls.Get(5)
+
+	// Write sections in the same order as before — output is deterministic.
+	writeSection(w, "SKILL", skill)
+
+	writeSectionStr(w, "CHANGE", fmt.Sprintf(
+		"Name: %s\nDescription: %s",
+		p.ChangeName, p.Description,
+	))
+
+	writeSection(w, "SPECIFICATIONS", specsData)
+	writeSection(w, "DESIGN", design)
+	writeSectionStr(w, "COMPLETED TASKS", extractCompletedTasks(string(tasks)))
+	writeSection(w, "TASKS", tasks)
+	if len(diff) > 0 {
+		writeSectionStr(w, "GIT DIFF", string(diff))
+	}
+
+	if len(rules) > 0 {
+		writeSection(w, "PROJECT RULES", rules)
+	}
+
+	return nil
+}
+```
+
+**Helper wrappers** needed for the refactor (added to review.go or a shared helpers file):
+
+```go
+// mustLoadSpecs wraps loadSpecs to match the func() ([]byte, error) signature.
+// Returns error via the error return; caller checks via Get().
+func mustLoadSpecs(changeDir string) (string, error) {
+	return loadSpecs(changeDir)  // loadSpecs already returns (string, error)
+}
+
+// gitDiffOrFallback wraps gitDiff to never fail — returns fallback string on error.
+func gitDiffOrFallback(projectDir string) string {
+	diff, err := gitDiff(projectDir)
+	if err != nil {
+		return fmt.Sprintf("(git diff unavailable: %v)", err)
+	}
+	return diff
+}
+
+// loadProjectRulesOptional wraps loadProjectRules, returning nil on miss.
+func loadProjectRulesOptional(projectDir string) []byte {
+	rules, err := loadProjectRules(projectDir)
+	if err != nil {
+		return nil
+	}
+	return rules
+}
+```
+
+**Note on type parameter**: Most assemblers load `[]byte` artifacts. For `loadSpecs` which returns `string`, and `gitDiff`/`buildSummary` which return `string`, we wrap them into `func() ([]byte, error)` closures via `[]byte(...)` conversion. This keeps all assemblers using `LazySlice[[]byte]` — a single type parameter across the codebase.
+
+### Assembler I/O Load Summary
+
+Each assembler's loader closures:
+
+| Assembler | Loaders | Critical | Optional |
+|-----------|---------|----------|----------|
+| explore | skill, gitFileTree, manifests | skill | fileTree, manifests |
+| propose | skill, exploration, gitFileTree | skill, exploration | fileTree |
+| spec | skill, proposal, buildSummary | skill, proposal | summary |
+| design | skill, proposal, loadSpecs, buildSummary | skill, proposal, specs | summary |
+| tasks | skill, design, loadSpecs | skill, design, specs | - |
+| apply | skill, tasks, design, loadSpecs, buildSummary | skill, tasks, design, specs | summary |
+| review | skill, loadSpecs, design, tasks, gitDiff, rules | skill, specs, design, tasks | diff, rules |
+| clean | skill, verifyReport, tasks, buildSummary, design, loadSpecs | skill, verifyReport, tasks | summary, design, specs |
+
+## 5. Integration: Assemble() Changes
+
+Current `Assemble()` at context.go:55-96. Modified version:
+
+```go
+// Assemble resolves the phase and runs the appropriate assembler.
+// Emits CacheHit/CacheMiss and PhaseAssembled events via p.Broker.
+func Assemble(w io.Writer, phase state.Phase, p *Params) error {
+	fn, ok := dispatchers[phase]
+	if !ok {
+		return fmt.Errorf("no assembler for phase: %s", phase)
+	}
+
+	phaseStr := string(phase)
+	start := time.Now()
+
+	// Try cache first.
+	if cached, ok := tryCachedContext(p.ChangeDir, phaseStr, p.SkillsPath); ok {
+		size := len(cached)
+		w.Write(cached)
+
+		// Emit cache hit + assembled events (replaces inline emitMetrics).
+		p.Broker.Emit(events.Event{
+			Type: events.CacheHit,
+			Payload: events.CacheHitPayload{
+				Phase: phaseStr,
+				Bytes: size,
+			},
+		})
+		p.Broker.Emit(events.Event{
+			Type: events.PhaseAssembled,
+			Payload: events.PhaseAssembledPayload{
+				Phase:      phaseStr,
+				Bytes:      size,
+				Tokens:     estimateTokens(size),
+				Cached:     true,
+				DurationMs: time.Since(start).Milliseconds(),
+				ChangeDir:  p.ChangeDir,
+				SkillsPath: p.SkillsPath,
+			},
+		})
+		return nil
+	}
+
+	// Cache miss.
+	p.Broker.Emit(events.Event{
+		Type:    events.CacheMiss,
+		Payload: events.CacheMissPayload{Phase: phaseStr},
+	})
+
+	// Assemble into buffer for caching + size check.
+	var buf bytes.Buffer
+	if err := fn(&buf, p); err != nil {
+		return err
+	}
+
+	size := buf.Len()
+
+	// Size guard.
+	if size > maxContextBytes {
+		return fmt.Errorf("context too large: %s (%d bytes, ~%dK tokens) exceeds limit of %s (~%dK tokens)",
+			formatBytes(size), size, estimateTokens(size)/1000,
+			formatBytes(maxContextBytes), estimateTokens(maxContextBytes)/1000)
+	}
+
+	// Write to output.
+	content := buf.Bytes()
+	w.Write(content)
+
+	// Emit assembled event (subscribers handle caching + metrics).
+	p.Broker.Emit(events.Event{
+		Type: events.PhaseAssembled,
+		Payload: events.PhaseAssembledPayload{
+			Phase:      phaseStr,
+			Bytes:      size,
+			Tokens:     estimateTokens(size),
+			Cached:     false,
+			DurationMs: time.Since(start).Milliseconds(),
+			ChangeDir:  p.ChangeDir,
+			SkillsPath: p.SkillsPath,
+			Content:    content, // for cache subscriber to persist
+		},
+	})
+
+	return nil
+}
+```
+
+**What changed**:
+- Removed inline `emitMetrics(p.Stderr, ...)` call (context.go:68, context.go:94)
+- Removed inline `saveContextCache(...)` call (context.go:92)
+- Added `p.Broker.Emit(...)` for `CacheHit`/`CacheMiss`/`PhaseAssembled`
+- `PhaseAssembledPayload.Content` carries the assembled bytes so the cache subscriber can persist them without the assembler knowing about caching
+
+## 6. Integration: runWrite() Changes
+
+Current `runWrite()` at commands.go:312-371. Events emitted after the existing promote/advance logic:
+
+```go
+func runWrite(args []string, stdout io.Writer, stderr io.Writer) error {
+	// ... existing arg parsing, resolve changeDir, load state (lines 312-335) ...
+
+	// Promote pending artifact.
+	promoted, err := artifacts.Promote(changeDir, phase)
+	if err != nil {
+		return errs.WriteError(stderr, "write", err)
+	}
+
+	// Emit ArtifactPromoted event.
+	// broker is obtained from the function's scope — see wiring below.
+	broker.Emit(events.Event{
+		Type: events.ArtifactPromoted,
+		Payload: events.ArtifactPromotedPayload{
+			Change:     name,
+			Phase:      phaseStr,
+			PromotedTo: promoted,
+		},
+	})
+
+	// Advance state.
+	prevPhase := st.CurrentPhase
+	if err := st.Advance(phase); err != nil {
+		return errs.WriteError(stderr, "write", fmt.Errorf("advance state: %w", err))
+	}
+
+	// Save state.
+	if err := state.Save(st, statePath); err != nil {
+		return errs.WriteError(stderr, "write", err)
+	}
+
+	// Emit StateAdvanced event.
+	broker.Emit(events.Event{
+		Type: events.StateAdvanced,
+		Payload: events.StateAdvancedPayload{
+			Change:    name,
+			FromPhase: string(prevPhase),
+			ToPhase:   string(st.CurrentPhase),
+		},
+	})
+
+	// ... existing JSON output (lines 353-371) ...
+}
+```
+
+**Broker wiring in runWrite**: `runWrite` does not currently receive a `Params` struct. The broker must be created at the CLI dispatch level and passed down. Two options:
+
+| # | Approach | Pros | Cons |
+|---|----------|------|------|
+| 1 | Create broker in `Run()` dispatcher, pass to all `run*` functions | Single creation point, consistent | Signature change for all `run*` functions |
+| 2 | Create broker locally in `runWrite` | Minimal change surface | No subscriber from `runContext` can observe write events |
+
+**Choice**: Option 1 — create broker in `Run()` and pass to functions that need it. `runWrite` and `runContext`/`runNew` are the only functions that emit events. The broker is created once per CLI invocation in `Run()` and passed as an argument.
+
+Specifically, the `Run()` function in `internal/cli/run.go` (or wherever the command dispatch lives) will:
+
+```go
+func Run(args []string, stdout, stderr io.Writer) error {
+	broker := events.NewBroker(stderr)
+	registerDefaultSubscribers(broker, stderr)
+	// ... dispatch to runContext, runWrite, etc., passing broker ...
+}
+```
+
+For `runContext` and `runNew`, the broker is wired into `Params.Broker`. For `runWrite`, it is passed as an additional parameter.
+
+## 7. Integration: Params Struct Changes
+
+Current `Params` at context.go:29-38:
+
+```go
+type Params struct {
+	ChangeDir   string
+	ChangeName  string
+	Description string
+	ProjectDir  string
+	Config      *config.Config
+	SkillsPath  string
+	Stderr      io.Writer
+	Verbosity   int
+}
+```
+
+Modified:
+
+```go
+import "github.com/rechedev9/shenronSDD/sdd-cli/internal/events"
+
+type Params struct {
+	ChangeDir   string
+	ChangeName  string
+	Description string
+	ProjectDir  string
+	Config      *config.Config
+	SkillsPath  string
+	Stderr      io.Writer
+	Verbosity   int
+	Broker      *events.Broker // nil-safe; nil means no event emission
+}
+```
+
+**Nil-safe usage pattern** — no nil checks needed at call sites:
+
+```go
+// In Assemble() — works whether Broker is nil or not:
+p.Broker.Emit(events.Event{Type: events.CacheMiss, Payload: ...})
+
+// In tests that don't care about events:
+p := &Params{ChangeDir: dir, Config: cfg}  // Broker is nil — all Emit calls are no-ops
+```
+
+This is possible because `Broker.Emit()` and `Broker.Subscribe()` both start with `if b == nil { return }`.
+
+### Default Subscriber Registration
+
+```go
+// registerDefaultSubscribers wires the standard side-effect subscribers.
+// Called once per CLI invocation in Run().
+func registerDefaultSubscribers(broker *events.Broker, stderr io.Writer, verbosity int) {
+	// Metrics recording subscriber (was inline recordMetrics in cache.go:274).
+	broker.Subscribe(events.PhaseAssembled, func(e events.Event) {
+		p, ok := e.Payload.(events.PhaseAssembledPayload)
+		if !ok {
+			return
+		}
+		m := &sddctx.ContextMetrics{
+			Phase:      p.Phase,
+			Bytes:      p.Bytes,
+			Tokens:     p.Tokens,
+			Cached:     p.Cached,
+			DurationMs: p.DurationMs,
+		}
+		sddctx.RecordMetrics(p.ChangeDir, m)
+	})
+
+	// Stderr metrics output subscriber (was inline writeMetrics in cache.go:230).
+	broker.Subscribe(events.PhaseAssembled, func(e events.Event) {
+		p, ok := e.Payload.(events.PhaseAssembledPayload)
+		if !ok {
+			return
+		}
+		m := &sddctx.ContextMetrics{
+			Phase:      p.Phase,
+			Bytes:      p.Bytes,
+			Tokens:     p.Tokens,
+			Cached:     p.Cached,
+			DurationMs: p.DurationMs,
+		}
+		sddctx.WriteMetricsOutput(stderr, m, verbosity)
+	})
+
+	// Cache persistence subscriber (was inline saveContextCache in context.go:92).
+	broker.Subscribe(events.PhaseAssembled, func(e events.Event) {
+		p, ok := e.Payload.(events.PhaseAssembledPayload)
+		if !ok || p.Cached || p.Content == nil {
+			return // only cache on fresh assembly
+		}
+		_ = sddctx.SaveContextCache(p.ChangeDir, p.Phase, p.SkillsPath, p.Content)
+	})
+}
+```
+
+**Note**: This requires exporting `recordMetrics` -> `RecordMetrics`, `writeMetrics` -> `WriteMetricsOutput`, `saveContextCache` -> `SaveContextCache`, and `contextMetrics` -> `ContextMetrics` from the `context` package. The alternative is to keep them unexported and register the subscribers from within the `context` package via a `RegisterSubscribers(broker)` function. The latter preserves encapsulation better.
+
+**Decision**: Use an exported `RegisterSubscribers` function on the `context` package:
+
+```go
+// In internal/context/subscribers.go (new file):
+package context
+
+import "github.com/rechedev9/shenronSDD/sdd-cli/internal/events"
+
+// RegisterSubscribers wires the default event subscribers for context assembly.
+// Call once per CLI invocation after creating the Broker.
+func RegisterSubscribers(broker *events.Broker, stderr io.Writer, verbosity int) {
+	if broker == nil {
+		return
+	}
+
+	broker.Subscribe(events.PhaseAssembled, func(e events.Event) {
+		p, ok := e.Payload.(events.PhaseAssembledPayload)
+		if !ok {
+			return
+		}
+		m := &contextMetrics{
+			Phase:      p.Phase,
+			Bytes:      p.Bytes,
+			Tokens:     p.Tokens,
+			Cached:     p.Cached,
+			DurationMs: p.DurationMs,
+		}
+		recordMetrics(p.ChangeDir, m)
+	})
+
+	broker.Subscribe(events.PhaseAssembled, func(e events.Event) {
+		p, ok := e.Payload.(events.PhaseAssembledPayload)
+		if !ok {
+			return
+		}
+		if stderr == nil || verbosity < 0 {
+			return
+		}
+		m := &contextMetrics{
+			Phase:      p.Phase,
+			Bytes:      p.Bytes,
+			Tokens:     p.Tokens,
+			Cached:     p.Cached,
+			DurationMs: p.DurationMs,
+		}
+		writeMetrics(stderr, m, verbosity)
+	})
+
+	broker.Subscribe(events.PhaseAssembled, func(e events.Event) {
+		p, ok := e.Payload.(events.PhaseAssembledPayload)
+		if !ok || p.Cached || p.Content == nil {
+			return
+		}
+		_ = saveContextCache(p.ChangeDir, p.Phase, p.SkillsPath, p.Content)
+	})
+}
+```
+
+This avoids exporting internal types and keeps the subscriber logic co-located with the functions it wraps.
+
+## 8. pprof Gate
+
+### main.go Changes
+
+Current `main.go` at cmd/sdd/main.go:1-36. Modified:
+
+```go
+package main
+
+import (
+	"fmt"
+	"os"
+	"runtime"
+	"runtime/debug"
+	"runtime/pprof"
+	"strings"
+	"time"
+
+	"github.com/rechedev9/shenronSDD/sdd-cli/internal/cli"
+)
+
+func main() {
+	// Panic recovery (existing, lines 14-31).
+	defer func() {
+		if r := recover(); r != nil {
+			ts := time.Now()
+			name := fmt.Sprintf(".sdd-crash-%d.log", ts.Unix())
+			content := fmt.Sprintf("sdd crash report\ntimestamp: %s\nargs: %s\npanic: %v\n\nstack trace:\n%s",
+				ts.Format(time.RFC3339),
+				strings.Join(os.Args, " "),
+				r,
+				debug.Stack(),
+			)
+			if err := os.WriteFile(name, []byte(content), 0644); err != nil {
+				fmt.Fprintf(os.Stderr, "sdd: panic recovered; failed to write crash log: %v\n", err)
+			} else {
+				fmt.Fprintf(os.Stderr, "sdd: panic recovered; crash log written to %s\n", name)
+			}
+			os.Exit(3)
+		}
+	}()
+
+	// pprof gate — zero overhead when SDD_PPROF is unset.
+	stopProfile := startProfile(os.Getenv("SDD_PPROF"), os.Stderr)
+	defer stopProfile()
+
+	if err := cli.Run(os.Args[1:], os.Stdout, os.Stderr); err != nil {
+		os.Exit(cli.ExitCode(err))
+	}
+}
+
+// startProfile enables CPU and/or heap profiling based on the mode string.
+// Returns a cleanup function that stops profiling and closes files.
+// Unrecognized non-empty values are warned on stderr.
+func startProfile(mode string, stderr *os.File) func() {
+	if mode == "" {
+		return func() {} // zero overhead: no allocations, no pprof calls
+	}
+
+	var closers []func()
+
+	wantCPU := mode == "cpu" || mode == "all"
+	wantMem := mode == "mem" || mode == "all"
+
+	if !wantCPU && !wantMem {
+		fmt.Fprintf(stderr, "sdd: warning: unrecognized SDD_PPROF value %q (expected cpu, mem, or all)\n", mode)
+		return func() {}
+	}
+
+	if wantCPU {
+		f, err := os.Create("sdd-cpu.prof")
+		if err != nil {
+			fmt.Fprintf(stderr, "sdd: pprof: cannot create sdd-cpu.prof: %v\n", err)
+		} else {
+			if err := pprof.StartCPUProfile(f); err != nil {
+				fmt.Fprintf(stderr, "sdd: pprof: cannot start CPU profile: %v\n", err)
+				f.Close()
+			} else {
+				fmt.Fprintf(stderr, "sdd: pprof: CPU profiling to sdd-cpu.prof\n")
+				closers = append(closers, func() {
+					pprof.StopCPUProfile()
+					f.Close()
+				})
+			}
+		}
+	}
+
+	if wantMem {
+		f, err := os.Create("sdd-mem.prof")
+		if err != nil {
+			fmt.Fprintf(stderr, "sdd: pprof: cannot create sdd-mem.prof: %v\n", err)
+		} else {
+			closers = append(closers, func() {
+				runtime.GC() // get up-to-date statistics
+				if err := pprof.WriteHeapProfile(f); err != nil {
+					fmt.Fprintf(stderr, "sdd: pprof: cannot write heap profile: %v\n", err)
+				}
+				f.Close()
+				fmt.Fprintf(stderr, "sdd: pprof: heap profile written to sdd-mem.prof\n")
+			})
+		}
+	}
+
+	return func() {
+		for _, c := range closers {
+			c()
+		}
+	}
+}
+```
+
+**Profile file naming**: `sdd-cpu.prof` and `sdd-mem.prof` in CWD, consistent with the crash log pattern at main.go:17 (`.sdd-crash-{ts}.log`). The profile files do not include a timestamp because they are overwritten on each run — unlike crash logs which accumulate.
+
+**Zero overhead when unset**: The `if mode == ""` early return means no `os.Create`, no `pprof.*` calls, no allocations. The returned `func(){}` is a no-op closure.
+
+### Doctor Check
+
+Addition to `/home/reche/projects/SDDworkflow/sdd-cli/internal/cli/doctor.go`:
+
+```go
+func checkPprof() CheckResult {
+	val := os.Getenv("SDD_PPROF")
+	if val == "" {
+		return CheckResult{
+			Name:    "pprof",
+			Status:  "pass",
+			Message: "not set (no profiling)",
+		}
+	}
+	return CheckResult{
+		Name:    "pprof",
+		Status:  "pass",
+		Message: fmt.Sprintf("SDD_PPROF=%s", val),
+	}
+}
+```
+
+Added to the `checks` slice in `runDoctor()` (doctor.go:163-169):
+
+```go
+checks := []CheckResult{
+	configResult,
+	checkCache(changesDir, cfg),
+	checkOrphanedPending(changesDir),
+	checkSkillsPath(cfg),
+	checkBuildTools(cfg),
+	checkPprof(),  // NEW
+}
+```
+
+## 9. Migration Strategy
+
+### Existing Tests Continue to Work (nil broker)
+
+All existing tests construct `Params` without a `Broker` field. Because `Broker` is a pointer type, its zero value is `nil`. Because `Broker.Emit()` and `Broker.Subscribe()` are nil-safe (no-op on nil receiver), all existing test code continues to work without modification.
+
+The only behavioral change: the inline `emitMetrics()` and `saveContextCache()` calls are removed from `Assemble()`. Tests that previously verified metrics side effects will need to either:
+1. Pass a non-nil broker with subscribers (for integration tests), or
+2. Accept that metrics/cache are no longer written without a broker (for unit tests).
+
+Since `emitMetrics` and `saveContextCache` are best-effort and not asserted in existing `context_test.go` tests (which verify assembled output content, not side effects), no existing test assertions break.
+
+### Metrics Recording Migration
+
+**Before**: `recordMetrics()` called inline from `emitMetrics()` (cache.go:109), which is called from `Assemble()` (context.go:68, 94).
+
+**After**: `recordMetrics()` called from a `PhaseAssembled` subscriber registered via `RegisterSubscribers()`.
+
+The `recordMetrics` and `writeMetrics` functions remain in `cache.go` with their existing signatures — they become internal helpers called by the subscriber closures in `subscribers.go`.
+
+The `emitMetrics` function (context.go:98-115) is deleted entirely. Its responsibilities are split:
+- `recordMetrics` call -> metrics subscriber
+- `writeMetrics` call -> stderr subscriber
+
+### Cache Persistence Migration
+
+**Before**: `saveContextCache()` called inline from `Assemble()` (context.go:92).
+
+**After**: `saveContextCache()` called from a `PhaseAssembled` subscriber that checks `!p.Cached && p.Content != nil`.
+
+The `PhaseAssembledPayload.Content` field carries the assembled bytes on fresh assembly (nil on cache hit). The subscriber conditionally calls `saveContextCache` only when there is content to persist.
+
+### Cache Version Bump
+
+**Not needed.** The cache format (hash files, context files) is unchanged. The `cacheVersion` constant (cache.go:21, currently `5`) does not need incrementing because:
+- The cached context bytes are identical (assembler output is unchanged)
+- The hash computation is unchanged
+- Only the orchestration of when caching happens changes (inline -> subscriber)
+
+### Import Cycle Prevention
+
+The dependency graph is acyclic:
+```
+internal/csync       -> (stdlib only)
+internal/events      -> (stdlib only)
+internal/context     -> internal/csync, internal/events
+internal/cli         -> internal/context, internal/events
+```
+
+No package imports a package that imports it back.
+
+## Architecture Decisions
+
+| # | Decision | Choice | Alternatives Considered | Rationale |
+|---|----------|--------|-------------------------|-----------|
+| 1 | LazySlice type parameter | `LazySlice[[]byte]` for all assemblers | `LazySlice[any]` with type assertions; separate types per assembler | `[]byte` is the common denominator — skill, artifact, specs, diff all produce bytes. String results wrapped via `[]byte(s)`. Avoids type assertions and keeps generic usage simple. |
+| 2 | Semaphore implementation | Buffered channel `make(chan struct{}, N)` | `sync.Semaphore` (x/sync); `atomic` counter with spin | Buffered channel is idiomatic Go, zero dependencies, well-understood. `x/sync` adds external dep. Atomic spin wastes CPU. |
+| 3 | Subscriber registration location | `context.RegisterSubscribers()` function | Export `RecordMetrics`/`WriteMetrics`/`SaveContextCache` and register in `cli` | Keeps unexported functions unexported. Subscriber logic co-located with the functions it delegates to. Cleaner encapsulation. |
+| 4 | Event payload design | Concrete struct per event type, carried via `any` in `Event.Payload` | Interface with methods; sum type via sealed interface | Concrete structs are simplest — subscribers do a single type assertion. No method boilerplate. `any` payload with documented types matches Go patterns (context.Value, slog.Attr). |
+| 5 | Broker creation point | Single broker in `Run()`, passed down | Global singleton; per-command broker | Single creation enables cross-command subscriber visibility (e.g., metrics subscriber sees both context and write events). Testable via injection. Global singleton is anti-pattern. Per-command misses cross-cutting concerns. |
+| 6 | pprof output location | CWD (sdd-cpu.prof, sdd-mem.prof) | openspec/.cache/ directory | CWD matches crash log convention (main.go:17). openspec/.cache/ would require config loading before profiling starts, adding latency to the profiling gate. |
+
+## File Changes
+
+| # | File Path | Action | Description |
+|---|-----------|--------|-------------|
+| 1 | `/home/reche/projects/SDDworkflow/sdd-cli/internal/csync/lazyslice.go` | create | LazySlice[T] generic type with bounded worker pool |
+| 2 | `/home/reche/projects/SDDworkflow/sdd-cli/internal/csync/lazyslice_test.go` | create | Unit tests: construction, LoadAll, Get, panic recovery, race detector |
+| 3 | `/home/reche/projects/SDDworkflow/sdd-cli/internal/events/broker.go` | create | Broker type, Event/EventType, Subscribe, Emit with serialized dispatch |
+| 4 | `/home/reche/projects/SDDworkflow/sdd-cli/internal/events/broker_test.go` | create | Unit tests: subscribe/emit, panic recovery, concurrent emit, nil-safe |
+| 5 | `/home/reche/projects/SDDworkflow/sdd-cli/internal/context/context.go` | modify | Add Broker field to Params (line 29); replace inline emitMetrics/saveContextCache in Assemble() (lines 55-96) with Broker.Emit calls; delete emitMetrics function (lines 98-115) |
+| 6 | `/home/reche/projects/SDDworkflow/sdd-cli/internal/context/subscribers.go` | create | RegisterSubscribers() — wires metrics, stderr, and cache subscribers |
+| 7 | `/home/reche/projects/SDDworkflow/sdd-cli/internal/context/cache.go` | modify | No functional changes; recordMetrics (line 274) and writeMetrics (line 230) remain as-is, now called by subscribers instead of inline |
+| 8 | `/home/reche/projects/SDDworkflow/sdd-cli/internal/context/explore.go` | modify | Refactor AssembleExplore to use LazySlice for skill, gitFileTree, manifests |
+| 9 | `/home/reche/projects/SDDworkflow/sdd-cli/internal/context/propose.go` | modify | Refactor AssemblePropose to use LazySlice for skill, exploration, gitFileTree |
+| 10 | `/home/reche/projects/SDDworkflow/sdd-cli/internal/context/spec.go` | modify | Refactor AssembleSpec to use LazySlice for skill, proposal, buildSummary |
+| 11 | `/home/reche/projects/SDDworkflow/sdd-cli/internal/context/design.go` | modify | Refactor AssembleDesign to use LazySlice for skill, proposal, specs, buildSummary |
+| 12 | `/home/reche/projects/SDDworkflow/sdd-cli/internal/context/tasks.go` | modify | Refactor AssembleTasks to use LazySlice for skill, design, specs |
+| 13 | `/home/reche/projects/SDDworkflow/sdd-cli/internal/context/apply.go` | modify | Refactor AssembleApply to use LazySlice for skill, tasks, design, specs, buildSummary |
+| 14 | `/home/reche/projects/SDDworkflow/sdd-cli/internal/context/review.go` | modify | Refactor AssembleReview to use LazySlice for skill, specs, design, tasks, diff, rules |
+| 15 | `/home/reche/projects/SDDworkflow/sdd-cli/internal/context/clean.go` | modify | Refactor AssembleClean to use LazySlice for skill, verifyReport, tasks, summary, design, specs |
+| 16 | `/home/reche/projects/SDDworkflow/sdd-cli/cmd/sdd/main.go` | modify | Add startProfile() function and SDD_PPROF gate before cli.Run() |
+| 17 | `/home/reche/projects/SDDworkflow/sdd-cli/internal/cli/commands.go` | modify | Wire broker into Params in runContext/runNew; emit events from runWrite; store prevPhase before Advance |
+| 18 | `/home/reche/projects/SDDworkflow/sdd-cli/internal/cli/doctor.go` | modify | Add checkPprof() function and include in runDoctor checks slice |
+| 19 | `/home/reche/projects/SDDworkflow/sdd-cli/internal/cli/run.go` | modify | Create broker in Run(), call RegisterSubscribers(), pass broker to run* functions |
+
+**Summary**: 5 files created, 14 files modified, 0 files deleted
+
+## Testing Strategy
+
+| # | What to Test | Type | File Path | Maps to Requirement |
+|---|-------------|------|-----------|---------------------|
+| 1 | LazySlice construction (loaders, empty, nil) | unit | `/home/reche/projects/SDDworkflow/sdd-cli/internal/csync/lazyslice_test.go` | REQ-CSYNC-001 |
+| 2 | LazySlice bounded goroutine pool | unit | `/home/reche/projects/SDDworkflow/sdd-cli/internal/csync/lazyslice_test.go` | REQ-CSYNC-002 |
+| 3 | LazySlice LoadAll blocking + result ordering | unit | `/home/reche/projects/SDDworkflow/sdd-cli/internal/csync/lazyslice_test.go` | REQ-CSYNC-003 |
+| 4 | LazySlice partial failure + error messages | unit | `/home/reche/projects/SDDworkflow/sdd-cli/internal/csync/lazyslice_test.go` | REQ-CSYNC-004 |
+| 5 | LazySlice race detector (go test -race) | unit+race | `/home/reche/projects/SDDworkflow/sdd-cli/internal/csync/lazyslice_test.go` | REQ-CSYNC-005 |
+| 6 | LazySlice no goroutine leak + panic recovery | unit | `/home/reche/projects/SDDworkflow/sdd-cli/internal/csync/lazyslice_test.go` | REQ-CSYNC-006 |
+| 7 | Broker subscribe + emit single/multiple | unit | `/home/reche/projects/SDDworkflow/sdd-cli/internal/events/broker_test.go` | REQ-EVENTS-001 |
+| 8 | Event type payloads carry required fields | unit | `/home/reche/projects/SDDworkflow/sdd-cli/internal/events/broker_test.go` | REQ-EVENTS-002 |
+| 9 | Broker subscriber panic recovery | unit | `/home/reche/projects/SDDworkflow/sdd-cli/internal/events/broker_test.go` | REQ-EVENTS-003 |
+| 10 | Broker serialized dispatch under concurrency | unit+race | `/home/reche/projects/SDDworkflow/sdd-cli/internal/events/broker_test.go` | REQ-EVENTS-004 |
+| 11 | Nil broker emit/subscribe no-op | unit | `/home/reche/projects/SDDworkflow/sdd-cli/internal/events/broker_test.go` | REQ-EVENTS-005 |
+| 12 | Assemble emits CacheHit/CacheMiss/PhaseAssembled | integration | `/home/reche/projects/SDDworkflow/sdd-cli/internal/context/context_test.go` | REQ-EVENTS-006 |
+| 13 | runWrite emits ArtifactPromoted + StateAdvanced | integration | `/home/reche/projects/SDDworkflow/sdd-cli/internal/cli/commands_test.go` | REQ-EVENTS-006 |
+| 14 | SDD_PPROF=cpu/mem/all creates profile files | integration | `/home/reche/projects/SDDworkflow/sdd-cli/cmd/sdd/main_test.go` | REQ-PPROF-001, REQ-PPROF-002 |
+| 15 | SDD_PPROF unset creates no files | integration | `/home/reche/projects/SDDworkflow/sdd-cli/cmd/sdd/main_test.go` | REQ-PPROF-001 |
+| 16 | Unrecognized SDD_PPROF warns on stderr | integration | `/home/reche/projects/SDDworkflow/sdd-cli/cmd/sdd/main_test.go` | REQ-PPROF-001 |
+| 17 | Doctor checkPprof output | unit | `/home/reche/projects/SDDworkflow/sdd-cli/internal/cli/doctor_test.go` | REQ-PPROF-004 |
+| 18 | Existing context_test.go passes with nil broker | regression | `/home/reche/projects/SDDworkflow/sdd-cli/internal/context/context_test.go` | REQ-EVENTS-005 |
+| 19 | AssembleConcurrent + metrics.json race fix | integration+race | `/home/reche/projects/SDDworkflow/sdd-cli/internal/context/context_test.go` | REQ-EVENTS-004 |
+| 20 | Assembler output byte-identical with LazySlice | regression | `/home/reche/projects/SDDworkflow/sdd-cli/internal/context/context_test.go` | REQ-CSYNC-003 |
+
+### Test Dependencies
+
+- **Mocks needed**: None. LazySlice and Broker are tested with real closures. Assembler tests use the existing temp-dir fixture pattern in context_test.go.
+- **Fixtures needed**: Existing context_test.go fixtures (temp changeDir with skills, artifacts, specs). No new fixtures.
+- **Infrastructure**: `go test -race` for all packages containing concurrency (csync, events, context).
+
+## Migration and Rollout
+
+No migration or rollout steps required. All changes are additive:
+- New packages (`csync`, `events`) are self-contained
+- `Params.Broker` is backward-compatible (nil zero value)
+- pprof gate is opt-in via environment variable
+- Assembler output is byte-identical (only I/O scheduling changes)
+- No state format changes, no config format changes, no cache format changes
+
+### Rollback Steps
+
+1. Revert the merge commit — all features are additive
+2. Remove `internal/csync/` and `internal/events/` directories
+3. Assemblers revert to sequential `loadSkill`/`loadArtifact` calls
+4. `Assemble()` reverts to inline `emitMetrics`/`saveContextCache`
+5. `main.go` pprof block is removed
+6. `Params.Broker` field is removed
+7. `sdd doctor` checkPprof is removed
+
+Verification: `go test ./... -race` passes, `go build ./cmd/sdd` succeeds.
+
+## Open Questions
+
+- **buildSummary inside LazySlice**: `buildSummary()` (summary.go:13) reads multiple files itself (exploration.md, proposal.md, design.md, review-report.md). Should it also use LazySlice internally, or is the sequential file-read pattern acceptable given that each file is small (<2KB)? Decision: leave `buildSummary` sequential for now — its I/O is negligible compared to the assembler-level fan-out.
+
+---
+
+**Next Step**: After both design and specs are complete, run `sdd-tasks` to generate the implementation checklist.
+

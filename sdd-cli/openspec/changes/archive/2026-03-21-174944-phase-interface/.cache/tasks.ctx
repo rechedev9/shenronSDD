@@ -1,0 +1,1144 @@
+
+--- SKILL ---
+
+---
+name: sdd-tasks
+description: >
+  Break design into phased, numbered implementation checklist. Tasks are grouped by phase and small enough for one session.
+  Trigger: When both sdd-spec and sdd-design are complete, or when user runs /sdd-continue.
+license: MIT
+metadata:
+  version: "1.0"
+---
+
+# SDD Tasks
+
+You are executing the **tasks** phase inline. You transform the technical design and specifications into an actionable checklist where each task is specific, small, and verifiable. Tasks are the bridge between planning and implementation.
+
+## Activation
+
+User runs `/sdd-continue` after both spec and design are complete. Reads `openspec/changes/{changeName}/design.md`, all spec files in `openspec/changes/{changeName}/specs/`, and `proposal.md` for context.
+
+## Prerequisites
+
+This phase has strict dependencies:
+- **sdd-spec**: MUST be complete (specs define WHAT to test)
+- **sdd-design**: MUST be complete (design defines WHAT to build and WHERE)
+- **sdd-propose**: MUST be approved (proposal defines scope and success criteria)
+
+If either spec or design is missing, return `status: error` with a message indicating which prerequisite is incomplete.
+
+## Execution Steps
+
+### Step 1: Load Project Context
+
+1. Read `openspec/config.yaml` for:
+   - Task phase rules (`phases.tasks`)
+   - Phase ordering conventions
+   - Task format conventions
+   - Verification commands (typecheck, lint, test)
+2. Read `CLAUDE.md` for project-specific constraints (file length limits, testing patterns, type strictness, error handling patterns).
+
+### Step 2: Read Design Document
+
+Read `design.md` and extract:
+
+1. **File Changes table**: Every file that will be created, modified, or deleted.
+   - Categorize each file by its role: type definition, business logic, API handler, database, UI component, test, configuration
+2. **Interfaces and Contracts**: Types that must be defined before implementation.
+3. **Architecture Decisions**: Constraints that affect task ordering.
+4. **Testing Strategy table**: Every test that needs to be written.
+5. **Migration steps**: Database or infrastructure changes.
+6. **Dependencies between files**: Which files must exist before others can be written.
+
+### Step 3: Read Spec Files
+
+Read all spec files and extract:
+
+1. **Requirements list**: Every REQ-{DOMAIN}-{NNN} with its priority (MUST/SHOULD/MAY).
+2. **Scenarios**: Every Given/When/Then scenario (these become test cases).
+3. **Acceptance criteria summary**: The verification checklist.
+4. Map each requirement to the design component that implements it.
+5. Map each scenario to the test file that will verify it.
+
+### Step 4: Read Proposal (if available)
+
+If proposal path is provided, read to extract:
+1. **Success criteria**: The ultimate verification checklist.
+2. **Rollback plan**: Influences cleanup tasks.
+3. **Out-of-scope items**: Ensures tasks do not accidentally include excluded work.
+
+### Step 5: Bottom-Up Phase Assignment
+
+Assign tasks to numbered phases following a strict **bottom-up** philosophy:
+
+> **Build robust base abstractions first. Make the primitives flawless so the high-level logic becomes trivial.**
+
+- Phase 1 contains the lowest-level work: types, schemas, config, shared utilities — things with zero internal dependencies.
+- Each subsequent phase builds on the previous: business logic consumes types, API/UI consumes business logic, tests consume implementations, cleanup finalizes.
+- Create as many or as few phases as the change requires. A 2-file bugfix might need 2 phases; a full-stack feature might need 6.
+- No task may reference a file created in a later phase — if it does, reorder.
+- The final phase must always include running the full verification suite and confirming proposal success criteria.
+
+### Step 6: Write Individual Tasks
+
+Each task must follow this format:
+
+```markdown
+- [ ] {Phase}.{Number} {Action verb} — {specific file path}, {specific change description}
+```
+
+Task quality standards:
+
+| Criterion     | Rule                                                              |
+|---------------|-------------------------------------------------------------------|
+| Specific      | References a single file or tightly related pair (source + test)  |
+| Actionable    | Starts with a verb: Create, Add, Modify, Update, Remove, Wire    |
+| Verifiable    | Has a clear "done" state (file exists, test passes, type checks)  |
+| Small          | Completable in one sdd-apply batch (roughly 1 file or logical unit) |
+| Ordered       | Dependencies are respected (no task references an uncreated file) |
+
+Action verbs: Create (new file), Add (to existing file), Modify (change signature), Update (config/wiring), Remove (delete), Wire (connect modules), Test (write tests), Verify (run checks), Migrate (DB/data).
+
+#### Task Completion States
+
+- `[ ]` Pending — not started
+- `[x]` Complete — fully implemented and verified
+- `[~]` Partial — started but not finished. Remaining work listed in apply-report.md. Counts as 0.5 for metrics. Re-run `/sdd-apply` for the same phase before advancing.
+
+### Step 7: Mark Parallelizable Tasks
+
+Within each phase, mark tasks that can run in parallel using blockquotes:
+
+```markdown
+> Tasks 2.1-2.3 can run in parallel.
+- [ ] 2.1 Create — /abs/path/to/auth.service.ts, implement token exchange
+- [ ] 2.2 Create — /abs/path/to/oauth.repository.ts, implement account storage
+> Task 2.3 depends on 2.1 and 2.2.
+- [ ] 2.3 Modify — /abs/path/to/user.service.ts, add linkOAuthAccount method
+```
+
+### Step 8: Add Requirement Traceability
+
+For each testing task, reference the spec requirement it verifies:
+
+```markdown
+- [ ] 4.1 Test — /abs/path/to/auth.service.test.ts, test OAuth2 token exchange (REQ-AUTH-001, REQ-AUTH-002)
+- [ ] 4.2 Test — /abs/path/to/oauth.validator.test.ts, test callback validation (REQ-AUTH-003)
+- [ ] 4.3 Test — /abs/path/to/auth.api.test.ts, test /api/auth/oauth/callback endpoint (REQ-AUTH-001 scenario 2)
+```
+
+### Step 9: Write tasks.md
+
+Create `openspec/changes/{change_name}/tasks.md`:
+
+```markdown
+# Implementation Tasks: {Change Name (title case)}
+
+**Change**: {change_name}
+**Date**: {ISO 8601 timestamp}
+**Status**: pending
+**Depends On**: design.md, specs/
+
+---
+
+## Summary
+
+- **Total Tasks**: {count}
+- **Phases**: {N}
+- **Estimated Files Changed**: {count from design}
+- **Test Cases Planned**: {count from specs}
+
+## Verification Commands
+
+After each phase, run the project's typecheck, lint, and test commands (detected from `openspec/config.yaml`, `CLAUDE.md`, or `package.json` scripts). All must pass with zero errors.
+
+---
+
+## Phase {N}: {Phase Name} ({N} tasks)
+
+{Description of what this phase accomplishes}
+
+> Parallelizable: {list task numbers, or "All tasks are sequential"}
+
+- [ ] {N}.1 {Action} — {file path}, {description}
+- [ ] {N}.2 {Action} — {file path}, {description}
+...
+
+**Phase {N} Checkpoint**: {What should be true after this phase completes}
+
+---
+
+{Repeat for each phase. The number and names of phases are determined by bottom-up analysis, not a fixed template.}
+
+---
+
+## Requirement Traceability Matrix
+
+| Requirement ID      | Task(s)            | Test Task(s)       | Status  |
+|---------------------|--------------------|--------------------|---------|
+| REQ-{DOMAIN}-001    | 2.1, 3.1           | 4.1                | pending |
+| REQ-{DOMAIN}-002    | 2.2                | 4.2                | pending |
+| REQ-{DOMAIN}-003    | 2.3, 3.2           | 4.3, 4.4           | pending |
+
+## Success Criteria Checklist
+
+From the proposal, all must be true when tasks are complete:
+
+- [ ] {Criterion 1 from proposal}
+- [ ] {Criterion 2 from proposal}
+- [ ] {Criterion 3 from proposal}
+- [ ] All delta specs pass (scenarios verified by tests)
+- [ ] No type/build errors (project's check command passes)
+- [ ] No lint errors (project's lint command passes)
+- [ ] All tests pass (project's test command passes)
+```
+
+### Step 10: Validate Task Completeness
+
+Before returning, validate:
+
+1. **Every file in the design's File Changes table** has at least one task.
+2. **Every requirement from specs** appears in the traceability matrix.
+3. **Every requirement has at least one test task** mapping to it.
+4. **Phase ordering respects dependencies** (no task references a file created in a later phase).
+5. **Task numbering is sequential** within each phase (1.1, 1.2, ..., 2.1, 2.2, ...).
+6. **No task is too large** (modifying more than 2-3 closely related files).
+7. **Phase checkpoints are specific** (not "things work" but "typecheck passes, auth.service.ts exports all required functions").
+8. **Success criteria from proposal** are all included in the final checklist.
+9. **Cleanup phase includes spec merging** (moving delta specs to openspec/specs/ after verification).
+
+### Step 11: Present Summary
+
+Present a markdown summary to the user, then STOP. Do not proceed automatically.
+
+**On success, output:**
+
+```markdown
+## SDD Tasks: {change_name}
+
+**Total tasks**: {N}  |  **Requirement coverage**: {coverage_percent}%
+
+### Tasks Written
+`openspec/changes/{change_name}/tasks.md`
+
+### Tasks by Phase
+| Phase | Tasks | Parallelizable |
+|-------|-------|---------------|
+| {1}: {Name} | {N} | {N} |
+| ... | ... | ... |
+
+### Coverage
+- **Files in design**: {N}  →  **Files with tasks**: {N}  ({coverage_percent}%)
+- **Requirements in specs**: {N}  →  **With tasks**: {N}  →  **With tests**: {N}
+
+{If warnings: ### ⚠ Warnings\n- {warning}\n}
+
+**Next step**: Review `openspec/changes/{change_name}/tasks.md`. When ready, run `/sdd-apply --phase 1` to begin implementation (start a fresh session with `/clear` first).
+```
+
+## Rules and Constraints
+
+1. **Tasks MUST reference specific file paths** from design.md. No vague "update the auth module" tasks.
+2. **Each task should be completable in one sdd-apply batch** -- roughly one file or one tightly related logical unit.
+3. **Phases follow strict bottom-up ordering.** No task may reference a file created in a later phase.
+4. **Use hierarchical numbering**: 1.1, 1.2, 2.1, 2.2. This enables precise references ("complete task 2.3").
+5. **Tasks depend on BOTH specs AND design.** Never generate tasks before both are complete.
+6. **Include testing tasks that map to spec scenarios.** Every MUST requirement needs a test task.
+7. **Mark parallelizable tasks explicitly** within each phase. This enables efficient parallel implementation.
+8. **Include verification checkpoints** after each phase. These are not optional -- they catch issues early.
+9. **All file paths must be absolute.** Never use relative paths.
+10. **Never modify source code.** Task artifacts go in `openspec/changes/{change_name}/`.
+11. **The traceability matrix must be complete.** Every requirement maps to implementation tasks and test tasks.
+12. **Respect the project's task-size conventions.** If a file is being created with many functions, consider splitting into multiple tasks (e.g., "Create file with type exports" then "Add validation functions to file").
+13. **Testing tasks should follow project test conventions** (per CLAUDE.md and framework SKILLs — test grouping, assertion patterns, Arrange/Act/Assert).
+14. **The final cleanup task must always include running the full verification suite** as defined in `openspec/config.yaml`.
+15. **TEST GENERATION POLICY**: Do NOT generate speculative test tasks. ONLY include test tasks if: (A) A spec scenario requires verification via a specific test file (referenced in the Testing Strategy), (B) The design's Testing Strategy table maps a requirement to a test, OR (C) The task explicitly starts with "Test — ...". Do not add test tasks for "just in case" coverage.
+
+## Error Handling
+
+- If `openspec/config.yaml` does not exist: return `status: error` recommending `sdd-init`.
+- If `design.md` does not exist: return `status: error` with message "Design must be complete before generating tasks."
+- If no spec files exist: return `status: error` with message "Specs must be complete before generating tasks."
+- If design and specs are inconsistent (design mentions files not covered by specs, or vice versa): warn but proceed, noting gaps.
+- All errors include the phase name (`tasks`) and a human-readable message.
+
+## PARCER Contract
+
+```yaml
+phase: tasks
+preconditions:
+  - spec files exist in openspec/changes/{changeName}/specs/
+  - design.md exists at openspec/changes/{changeName}/
+postconditions:
+  - tasks.md written with ≥1 phase containing ≥1 task
+  - each task references a spec scenario or design component
+  - tasks.md contains ≥1 task across ≥1 phase
+```
+
+
+--- CHANGE ---
+
+Name: phase-interface
+Description: Define a Phase interface that makes phases pluggable, self-documenting, and testable. Custom phases can be added without modifying the core state machine. Refactor existing phase assemblers to implement the interface.
+
+--- SPECIFICATIONS ---
+
+### spec.md
+
+# Spec: phase-interface
+
+**Domain**: phase-registry
+**Change ID**: phase-interface
+**Status**: pending
+**Date**: 2026-03-21
+
+---
+
+## Overview
+
+This spec defines the requirements for replacing four parallel package-level maps with a single `Phase` struct and `Registry`. The refactor introduces a new `internal/phase` package that has no internal imports, making it importable by `state`, `artifacts`, and `context` without cycles. All phase metadata — prerequisites, next phases, artifact filename, cache inputs, cache TTL, and assembler function — is consolidated into one `Phase` struct value per phase.
+
+---
+
+## RFC 2119 Usage
+
+The key words MUST, MUST NOT, REQUIRED, SHALL, SHALL NOT, SHOULD, SHOULD NOT, RECOMMENDED, MAY, and OPTIONAL in this document are to be interpreted as described in RFC 2119.
+
+---
+
+## Requirements
+
+### REQ-1: Phase Struct (ADDED)
+
+**REQ-1.1** The `internal/phase` package MUST define a `Phase` struct with the following fields:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `Name` | `string` | Canonical phase name (e.g., `"explore"`) |
+| `Prerequisites` | `[]string` | Phase names that must be completed before this phase |
+| `NextPhases` | `[]string` | Phase names that may start after this phase completes |
+| `ArtifactFile` | `string` | Final artifact filename or directory name; empty string for `verify` and `archive` |
+| `CacheInputs` | `[]string` | Artifact filenames (relative to change dir) whose content affects cached context; `"specs/"` is a directory sentinel |
+| `CacheTTL` | `time.Duration` | Maximum age of a valid cache entry; zero means no TTL check |
+| `Assemble` | `func(w io.Writer, p *AssemblerParams) error` | Context assembler function; MUST be nil for `verify` and `archive` |
+
+**REQ-1.2** The `Phase` struct MUST be defined in `internal/phase/phase.go` (or equivalent file in the `internal/phase` package).
+
+**REQ-1.3** The `Assemble` field MUST be permitted to be nil. Callers MUST guard with `p.Assemble != nil` before invoking it.
+
+**REQ-1.4** The `ArtifactFile` field MUST be empty (`""`) for `verify` and `archive`. All other eight phases MUST have a non-empty `ArtifactFile`.
+
+**REQ-1.5** The `Phase` struct MUST NOT embed or reference any type from `internal/state`, `internal/context`, `internal/artifacts`, `internal/config`, or `internal/events` in its definition. `AssemblerParams` fields that reference `config.Config` and `events.Broker` are defined on `AssemblerParams`, not on `Phase` itself.
+
+---
+
+### REQ-2: AssemblerParams (ADDED)
+
+**REQ-2.1** The `internal/phase` package MUST define an `AssemblerParams` struct that carries the inputs needed by every assembler function.
+
+**REQ-2.2** `AssemblerParams` MUST include at minimum: `ChangeDir string`, `ChangeName string`, `Description string`, `ProjectDir string`, `SkillsPath string`. It MAY include `Config`, `Stderr`, `Verbosity`, and `Broker` fields as needed by the assembler functions, subject to the import constraint in REQ-6.
+
+**REQ-2.3** The `Assemble` function field on `Phase` MUST have the type `func(w io.Writer, p *AssemblerParams) error`.
+
+**REQ-2.4** `internal/context` MUST update its assembler function signatures to accept `*phase.AssemblerParams` instead of `*Params` where the assembler is registered on a `Phase` struct. The existing `context.Params` struct MAY continue to exist if it serves purposes beyond assembly dispatch (e.g., holding `Broker`, `Stderr`, `Verbosity` for use after assembly completes).
+
+---
+
+### REQ-3: Registry Type (ADDED)
+
+**REQ-3.1** The `internal/phase` package MUST define a `Registry` type backed by an ordered `[]Phase` slice. Pipeline position is defined by slice index.
+
+**REQ-3.2** `Registry` MUST expose the following methods:
+
+| Method | Signature | Semantics |
+|--------|-----------|-----------|
+| `Register` | `func (r *Registry) Register(p Phase)` | Appends `p` to the registry; MUST panic if a phase with the same `Name` is already registered |
+| `Get` | `func (r *Registry) Get(name string) (Phase, bool)` | Returns the `Phase` for `name` and true, or zero value and false if not found |
+| `AllNames` | `func (r *Registry) AllNames() []string` | Returns phase names in registration order |
+| `All` | `func (r *Registry) All() []Phase` | Returns all phases in registration order |
+
+**REQ-3.3** A package-level `DefaultRegistry` of type `*Registry` MUST be initialized in `internal/phase`. All 10 built-in phases MUST be registered into `DefaultRegistry` via a package `init()` function (or equivalent top-level `var` initialization) in `internal/phase/registry.go`.
+
+**REQ-3.4** `Registry.Get` lookup MUST be O(N) linear scan on the `[]Phase` slice. N=10 for built-in phases; this is acceptable. No map-based index is required.
+
+**REQ-3.5** After the `internal/phase` package `init()` completes, `DefaultRegistry` MUST contain exactly 10 phases in pipeline order: `explore`, `propose`, `spec`, `design`, `tasks`, `apply`, `review`, `verify`, `clean`, `archive`.
+
+**REQ-3.6** `Registry` MUST be safe for concurrent reads after initialization. It MUST NOT be modified after the first `Get` or `AllNames` call during normal operation. Implementations SHOULD panic if `Register` is called after any read method has been invoked.
+
+---
+
+### REQ-4: Built-in Phase Registrations (ADDED)
+
+**REQ-4.1** The built-in phase definitions MUST preserve all existing pipeline semantics. The following table is normative:
+
+| Phase | Prerequisites | NextPhases | ArtifactFile | CacheTTL | Assemble nil? |
+|-------|--------------|------------|--------------|----------|----------------|
+| `explore` | `[]` | `[propose]` | `exploration.md` | 0 | No |
+| `propose` | `[explore]` | `[spec, design]` | `proposal.md` | 4h | No |
+| `spec` | `[propose]` | `[tasks]` | `specs` | 2h | No |
+| `design` | `[propose]` | `[tasks]` | `design.md` | 2h | No |
+| `tasks` | `[spec, design]` | `[apply]` | `tasks.md` | 1h | No |
+| `apply` | `[tasks]` | `[review]` | `tasks.md` | 30m | No |
+| `review` | `[apply]` | `[verify]` | `review-report.md` | 1h | No |
+| `verify` | `[review]` | `[clean]` | `""` | 0 | Yes |
+| `clean` | `[verify]` | `[archive]` | `clean-report.md` | 1h | No |
+| `archive` | `[clean]` | `[]` | `""` | 0 | Yes |
+
+**REQ-4.2** The `CacheInputs` values MUST match the current `phaseInputs` map in `internal/context/cache.go`. Specifically: `explore=[]`, `propose=[exploration.md]`, `spec=[proposal.md, exploration.md]`, `design=[proposal.md, specs/]`, `tasks=[design.md, specs/]`, `apply=[tasks.md, design.md, specs/]`, `review=[tasks.md, design.md, specs/]`, `clean=[verify-report.md, tasks.md, design.md, specs/]`. `verify` and `archive` MUST have empty `CacheInputs`.
+
+**REQ-4.3** `apply`'s `ArtifactFile` MUST remain `"tasks.md"` — apply updates tasks.md in place, not a separate file.
+
+---
+
+### REQ-5: Map Elimination (REMOVED)
+
+**REQ-5.1** The `prerequisites` map in `internal/state/state.go` MUST be deleted. `CanTransition`, `nextReady`, and `ReadyPhases` MUST be rewritten to obtain prerequisites from `phase.DefaultRegistry.Get(name).Prerequisites`.
+
+**REQ-5.2** The `validNextPhases` map in `internal/state/state.go` MUST be deleted.
+
+**REQ-5.3** The `ArtifactFileName` map in `internal/artifacts/artifacts.go` MUST be deleted. Callers MUST obtain artifact filenames via `phase.DefaultRegistry.Get(name).ArtifactFile`.
+
+**REQ-5.4** The `dispatchers` map in `internal/context/context.go` MUST be deleted. `Assemble()` MUST obtain the assembler function via `phase.DefaultRegistry.Get(string(phase)).Assemble`.
+
+**REQ-5.5** The `phaseInputs` map in `internal/context/cache.go` MUST be deleted. `tryCachedContext`, `saveContextCache`, and `CheckCacheIntegrity` MUST obtain cache inputs via `phase.DefaultRegistry.Get(phaseName).CacheInputs`.
+
+**REQ-5.6** The `phaseTTL` map in `internal/context/cache.go` MUST be deleted. Cache TTL checks MUST use `phase.DefaultRegistry.Get(phaseName).CacheTTL`. A zero `CacheTTL` MUST mean no TTL check (current behavior for `explore`).
+
+**REQ-5.7** `AllPhases()` in `internal/state/types.go` MUST be rewritten to return phases in registry order via `phase.DefaultRegistry.AllNames()`, converted to `[]state.Phase`.
+
+**REQ-5.8** `Recover()` in `internal/state/state.go` MUST derive its artifact→phase reverse lookup from the registry. It MUST iterate over all registered phases and skip any phase whose `ArtifactFile` is empty. The independent inline map currently at `state.go:213–221` MUST be deleted.
+
+---
+
+### REQ-6: Import Graph (ADDED)
+
+**REQ-6.1** `internal/phase` MUST NOT import any package under `internal/` (no internal imports). Its only imports MUST be from the Go standard library.
+
+**REQ-6.2** The import graph after refactor MUST be:
+
+```
+internal/phase          (no internal imports)
+    ↑
+internal/state          (imports internal/phase)
+internal/artifacts      (imports internal/phase)
+internal/context        (imports internal/phase)
+    ↑
+internal/cli            (unchanged — imports state, context, artifacts)
+```
+
+**REQ-6.3** No import cycle MUST be introduced. `go build ./...` MUST succeed without cycle errors.
+
+**REQ-6.4** `internal/context` MUST import `internal/phase` and register assembler functions onto `Phase` structs. `internal/phase` MUST NOT import `internal/context`.
+
+**REQ-6.5** `internal/state` MUST import `internal/phase`. `internal/phase` MUST NOT import `internal/state`.
+
+---
+
+### REQ-7: Custom Phase Registration (ADDED)
+
+**REQ-7.1** External callers (e.g., test code, plugin packages) MUST be able to register a custom phase by constructing a `phase.Phase` struct and calling `phase.DefaultRegistry.Register(p)`.
+
+**REQ-7.2** A registered custom phase MUST be returned by `phase.DefaultRegistry.AllNames()`, and therefore by `state.AllPhases()`, and MUST be considered by `state.ReadyPhases()` and `state.nextReady()`.
+
+**REQ-7.3** A registered custom phase with a non-nil `Assemble` field MUST be dispatchable by `context.Assemble()` without modifying any core file.
+
+**REQ-7.4** The `Register` method MUST panic if called with a `Phase` whose `Name` is empty.
+
+**REQ-7.5** Custom phases appended after the 10 built-ins are considered last in pipeline order. No position-hint API is required in this change.
+
+---
+
+### REQ-8: Unit Tests (ADDED)
+
+**REQ-8.1** `internal/phase/registry_test.go` MUST exist and MUST assert:
+
+1. Exactly 10 phases are registered in `DefaultRegistry`.
+2. No duplicate phase names exist.
+3. The prerequisite graph is acyclic (DFS or topological sort).
+4. `verify` and `archive` have nil `Assemble` and empty `ArtifactFile`.
+5. All other 8 phases have non-nil `Assemble` and non-empty `ArtifactFile`.
+6. A custom phase registered via `Register()` appears in `AllNames()`.
+7. `Register()` panics on duplicate name.
+
+**REQ-8.2** Existing tests in `internal/state/state_test.go` and `internal/context/context_test.go` MUST pass without modification (behavioral parity).
+
+---
+
+## Scenarios
+
+### SCN-1: Registry initialization order
+- **Eval**: static / compile-time
+- **Criticality**: critical
+
+**Given** `internal/phase/registry.go` registers all 10 phases in a package `init()` block
+**When** any importing package (`state`, `artifacts`, `context`) initializes
+**Then** the Go runtime guarantees `internal/phase.init()` completes before the importer's `init()`, so `DefaultRegistry` is populated before any consumer reads it.
+
+---
+
+### SCN-2: Assemble dispatch — hit
+- **Eval**: unit test
+- **Criticality**: high
+
+**Given** `DefaultRegistry` contains all 10 built-in phases
+**When** `context.Assemble(w, state.PhaseExplore, p)` is called
+**Then** `DefaultRegistry.Get("explore")` returns a `Phase` with non-nil `Assemble`; the assembler is called and writes to `w`; no error is returned.
+
+---
+
+### SCN-3: Assemble dispatch — phase with nil assembler
+- **Eval**: unit test
+- **Criticality**: high
+
+**Given** `verify` is registered with `Assemble == nil`
+**When** `context.Assemble(w, state.PhaseVerify, p)` is called
+**Then** the function returns an error (e.g., `"no assembler for phase: verify"`) without panicking. Callers that guard with `p.Assemble != nil` before calling will avoid this path entirely.
+
+---
+
+### SCN-4: Cache TTL — zero TTL phase
+- **Eval**: unit test
+- **Criticality**: medium
+
+**Given** `explore` has `CacheTTL == 0`
+**When** `tryCachedContext(changeDir, "explore", skillsPath)` is called with a valid content hash
+**Then** no TTL check is performed and the cached content is returned (matching current behavior where `explore` has no entry in `phaseTTL`).
+
+---
+
+### SCN-5: Cache TTL — expired entry
+- **Eval**: unit test
+- **Criticality**: high
+
+**Given** `propose` has `CacheTTL == 4h` and a cache entry was written 5 hours ago
+**When** `tryCachedContext(changeDir, "propose", skillsPath)` is called
+**Then** the function returns `nil, false` (cache miss due to TTL expiry).
+
+---
+
+### SCN-6: Recover() — registry-driven artifact scan
+- **Eval**: unit test
+- **Criticality**: high
+
+**Given** a change directory contains `exploration.md`, `proposal.md`, and `design.md` but no other phase artifacts
+**When** `state.Recover(name, desc, changeDir)` is called
+**Then** phases `explore`, `propose`, and `design` are marked `StatusCompleted`; all other phases remain `StatusPending`; `CurrentPhase` is computed by `nextReady()` from the registry.
+
+---
+
+### SCN-7: Custom phase registration
+- **Eval**: unit test
+- **Criticality**: medium
+
+**Given** a test constructs `phase.Phase{Name: "custom-lint", Prerequisites: []string{"review"}, ArtifactFile: "lint-report.md", Assemble: myLintAssembler}` and calls `phase.DefaultRegistry.Register(p)`
+**When** `state.AllPhases()` is called
+**Then** `"custom-lint"` appears in the returned slice after `"archive"`.
+
+---
+
+### SCN-8: Duplicate registration panics
+- **Eval**: unit test
+- **Criticality**: medium
+
+**Given** `"explore"` is already registered in `DefaultRegistry`
+**When** `phase.DefaultRegistry.Register(phase.Phase{Name: "explore", ...})` is called
+**Then** the call panics with a message identifying the duplicate name.
+
+---
+
+### SCN-9: Import cycle absence
+- **Eval**: static / compile-time
+- **Criticality**: critical
+
+**Given** the refactored codebase
+**When** `go build ./...` is run
+**Then** the build succeeds with exit code 0 and no `import cycle` error in the output.
+
+---
+
+### SCN-10: No-change CLI layer
+- **Eval**: diff / code review
+- **Criticality**: high
+
+**Given** `internal/cli/commands.go` uses `state.Phase` (string type), `context.Assemble()`, and `state.ReadyPhases()`
+**When** the refactor is applied
+**Then** `internal/cli/commands.go` has zero line diffs. The file MUST NOT be modified.
+
+---
+
+### SCN-11: Prerequisite graph acyclicity
+- **Eval**: unit test
+- **Criticality**: critical
+
+**Given** all 10 built-in phases registered in `DefaultRegistry`
+**When** the registry test performs a depth-first traversal of the prerequisite graph
+**Then** no cycle is detected; the traversal completes without revisiting a node.
+
+---
+
+### SCN-12: AllPhases ordering preserved
+- **Eval**: unit test
+- **Criticality**: high
+
+**Given** `DefaultRegistry` registers phases in pipeline order
+**When** `state.AllPhases()` is called
+**Then** the returned slice is `[explore, propose, spec, design, tasks, apply, review, verify, clean, archive]`, matching the current hardcoded slice order.
+
+---
+
+## Constraints
+
+- `go.mod` MUST NOT gain new entries. This refactor uses only standard library and existing module dependencies.
+- On-disk formats (artifact filenames, `state.json` schema) MUST NOT change.
+- `state.Phase` string type constants (`PhaseExplore`, `PhasePropose`, …) MUST remain in `internal/state/types.go`. They are unchanged.
+- The `cacheVersion` constant in `internal/context/cache.go` MUST be bumped when this refactor ships, because the cache hash inputs path changes from a local map lookup to a registry lookup. This ensures stale pre-refactor cache entries are invalidated.
+
+---
+
+## Out of Scope
+
+- Go interface polymorphism — `Phase` is a struct, not an interface.
+- `context.Params` full replacement — only assembler function types are updated.
+- File-based custom phase discovery (YAML/TOML config).
+- Changes to `AssembleConcurrent` parallelism logic.
+- Registry mutability lock with a read-after-write sentinel (deferred to implementation decision).
+- `Register()` position-hint parameter for ordering custom phases mid-pipeline.
+
+
+--- DESIGN ---
+
+# Design: Phase Interface
+
+**Change ID**: phase-interface
+**Date**: 2026-03-21
+**Status**: draft
+
+---
+
+## Overview
+
+Replace four parallel package-level maps with a single `Phase` struct and a `Registry`. All phase metadata (prerequisites, next-phases, artifact filename, cache inputs, cache TTL, assembler function) lives in one place. Existing call sites read from the registry; the `state.Phase` string type and all public function signatures are unchanged.
+
+---
+
+## Package Structure
+
+```
+internal/
+  phase/
+    phase.go       — Phase struct, AssemblerParams, Registry type, DefaultRegistry var
+    registry.go    — init() block registering all 10 built-in phases
+    registry_test.go — structural invariants: count, uniqueness, acyclicity, nil fields
+  state/
+    types.go       — AllPhases() delegates to registry
+    state.go       — prerequisites / validNextPhases / Recover() driven by registry
+  artifacts/
+    artifacts.go   — ArtifactFileName map deleted; ArtifactFileName() func added
+  context/
+    context.go     — dispatchers map deleted; Assemble() reads registry
+    cache.go       — phaseInputs / phaseTTL maps deleted; reads registry
+```
+
+No new directories beyond `internal/phase/`. No changes outside `internal/`.
+
+---
+
+## Import Graph
+
+```
+internal/config   (no internal imports)
+internal/events   (no internal imports)
+internal/state    (imports: config)
+internal/phase    (imports: config, events, state)  ← new package
+   ↑
+internal/artifacts (imports: phase, state)
+internal/context   (imports: phase, state, config, events, csync)
+internal/cli       (imports: state, artifacts, context, config, events — unchanged)
+```
+
+Cycle check:
+
+- `internal/phase` imports `internal/state` (for the `state.Phase` key type) — safe; `state` does not import `phase` before this change. After: `state` imports `phase`. This creates `state → phase → state` — a cycle.
+
+**Resolution**: `internal/phase` must NOT import `internal/state`. The `Phase` struct uses `string` for all name fields rather than `state.Phase`. The registry is keyed on plain `string` (matching `state.Phase`'s underlying type). `state.Phase` constants remain in `internal/state`; the registry accepts them as `string` at registration time via a thin conversion.
+
+Revised import graph:
+
+```
+internal/config   (leaf)
+internal/events   (leaf)
+internal/phase    (imports: config, events — no internal/state import)
+   ↑
+internal/state    (imports: phase, config)
+internal/artifacts (imports: phase, state)
+internal/context   (imports: phase, state, config, events, csync)
+internal/cli       (imports: state, artifacts, context, config, events — unchanged)
+```
+
+No cycles. `internal/phase` is a leaf among internal packages.
+
+---
+
+## Type Definitions
+
+### `internal/phase/phase.go`
+
+```go
+package phase
+
+import (
+    "io"
+    "time"
+
+    "github.com/rechedev9/shenronSDD/sdd-cli/internal/config"
+    "github.com/rechedev9/shenronSDD/sdd-cli/internal/events"
+)
+
+// AssemblerParams holds everything an assembler function needs.
+// Moved here from context.Params (same fields; context.Params becomes
+// a type alias or thin wrapper — see context.go changes below).
+type AssemblerParams struct {
+    ChangeDir   string
+    ChangeName  string
+    Description string
+    ProjectDir  string
+    Config      *config.Config
+    SkillsPath  string
+    Stderr      io.Writer
+    Verbosity   int
+    Broker      *events.Broker
+}
+
+// Assembler is the function type for per-phase context assembly.
+type Assembler func(w io.Writer, p *AssemblerParams) error
+
+// Phase is the canonical descriptor for one SDD pipeline phase.
+// Name uses plain string (not state.Phase) to avoid import cycles.
+type Phase struct {
+    Name          string        // matches state.Phase constant values
+    Prerequisites []string      // names of phases that must be completed first
+    NextPhases    []string      // names of phases this phase can transition to
+    ArtifactFile  string        // final artifact filename or dir; "" for verify, archive
+    CacheInputs   []string      // artifact paths that invalidate the cache
+    CacheTTL      time.Duration // 0 = no TTL (explore, verify, archive)
+    Assemble      Assembler     // nil for verify, archive
+}
+
+// Registry holds the ordered slice of Phase descriptors.
+// Order = pipeline position; used by AllPhases() and nextReady().
+// Read-only after init(); safe for concurrent reads.
+type Registry struct {
+    phases []Phase
+    sealed bool // set true on first Get(); prevents late registration
+}
+
+// Register appends a Phase to the registry.
+// Panics if called after the registry is sealed (after first Get()).
+// Panics if p.Name is empty or already registered.
+func (r *Registry) Register(p Phase)
+
+// Get returns the Phase descriptor for the given name.
+// Seals the registry on first call.
+// Returns (Phase{}, false) if not found.
+func (r *Registry) Get(name string) (Phase, bool)
+
+// All returns a snapshot of the ordered phase slice.
+// Seals the registry.
+func (r *Registry) All() []Phase
+
+// DefaultRegistry is the package-level singleton used by all internal packages.
+var DefaultRegistry = &Registry{}
+```
+
+---
+
+## Registration Pattern
+
+`internal/phase/registry.go` contains a single `init()` block that registers all 10 built-in phases on `DefaultRegistry`. Because `internal/phase` is imported by `internal/state`, `internal/artifacts`, and `internal/context`, Go guarantees `phase`'s `init()` runs before any of those packages' `init()` blocks and before any package-level variable initializers that call into the registry.
+
+```go
+// internal/phase/registry.go
+func init() {
+    for _, p := range builtinPhases {
+        DefaultRegistry.Register(p)
+    }
+}
+
+// builtinPhases is a var (not const) so the Assemble fields (function values)
+// can be assigned. Defined in the same file as the registrations.
+var builtinPhases = []Phase{
+    {
+        Name:          "explore",
+        Prerequisites: []string{},
+        NextPhases:    []string{"propose"},
+        ArtifactFile:  "exploration.md",
+        CacheInputs:   []string{},
+        CacheTTL:      0,
+        Assemble:      nil, // set by context package init — see Wiring section
+    },
+    // ... one entry per phase
+}
+```
+
+**Assembler wiring problem**: `internal/phase` must not import `internal/context` (context imports phase — that would cycle). The `Assemble` fields cannot be set at `phase/registry.go` `init()` time.
+
+**Resolution**: `internal/context` registers assemblers in its own `init()` via a `SetAssembler(name string, fn Assembler)` method on `Registry`:
+
+```go
+// internal/phase/phase.go — additional method
+func (r *Registry) SetAssembler(name string, fn Assembler)
+```
+
+`internal/context/context.go` `init()` calls `phase.DefaultRegistry.SetAssembler("explore", AssembleExplore)` etc. for all 8 assembling phases. `SetAssembler` panics on unknown name. `verify` and `archive` are never passed to `SetAssembler`.
+
+This means `builtinPhases` in `registry.go` can be declared with `Assemble: nil` for all phases; `context`'s `init()` fills them in before any `Assemble()` call can occur (CLI dispatch happens after all `init()` complete).
+
+`SetAssembler` is blocked after `sealed = true` — same guard as `Register`.
+
+---
+
+## Before → After: Each File
+
+### `internal/state/types.go`
+
+**Before**: `AllPhases()` returns a hardcoded `[]Phase` literal.
+
+**After**: `AllPhases()` delegates to the registry.
+
+```go
+// After
+func AllPhases() []Phase {
+    all := phase.DefaultRegistry.All()
+    result := make([]Phase, len(all))
+    for i, p := range all {
+        result[i] = Phase(p.Name)
+    }
+    return result
+}
+```
+
+The `state.Phase` string type and all 10 constants (`PhaseExplore` etc.) remain in `types.go` unchanged. `NewState` and `validate` are unchanged.
+
+**New import**: `internal/phase` added to `state/types.go`.
+
+---
+
+### `internal/state/state.go`
+
+**Before**: Two package-level maps:
+
+```go
+var validNextPhases = map[Phase][]Phase{ ... }
+var prerequisites   = map[Phase][]Phase{ ... }
+```
+
+Both maps are referenced in `CanTransition`, `nextReady`, `ReadyPhases`.
+
+**After**: Both maps deleted. Callers read from registry:
+
+```go
+// CanTransition — after
+func (s *State) CanTransition(target Phase) error {
+    desc, ok := phase.DefaultRegistry.Get(string(target))
+    if !ok {
+        return fmt.Errorf("unknown phase: %s", target)
+    }
+    if s.Phases[target] == StatusCompleted {
+        return fmt.Errorf("%w: %s already completed", ErrAlreadyCompleted, target)
+    }
+    for _, req := range desc.Prerequisites {
+        if s.Phases[Phase(req)] != StatusCompleted {
+            return fmt.Errorf("%w: %s requires %s completed (currently %s)",
+                ErrPrerequisitesNotMet, target, req, s.Phases[Phase(req)])
+        }
+    }
+    return nil
+}
+
+// nextReady — after
+func (s *State) nextReady() Phase {
+    for _, p := range AllPhases() {
+        if s.Phases[p] != StatusPending {
+            continue
+        }
+        desc, _ := phase.DefaultRegistry.Get(string(p))
+        ready := true
+        for _, req := range desc.Prerequisites {
+            if s.Phases[Phase(req)] != StatusCompleted {
+                ready = false
+                break
+            }
+        }
+        if ready {
+            return p
+        }
+    }
+    return ""
+}
+```
+
+`ReadyPhases` follows the same pattern as `nextReady`.
+
+**`Recover()` — before**: Contains an inline `map[Phase]string` with 7 entries (excludes apply, clean, archive — phases with no unique recovery artifact).
+
+**`Recover()` — after**: Iterates registry `All()`, reads `ArtifactFile` field, skips phases with empty `ArtifactFile`. The existing special-case for directories (specs/) is preserved: `state.Recover` checks `os.Stat` and if `IsDir()` verifies non-empty entries. No behavior change.
+
+```go
+// Recover — after
+func Recover(name, description, changeDir string) *State {
+    s := NewState(name, description)
+    for _, desc := range phase.DefaultRegistry.All() {
+        if desc.ArtifactFile == "" {
+            continue // verify, archive — no canonical recovery artifact
+        }
+        ph := Phase(desc.Name)
+        // apply maps to tasks.md (same file as tasks) — skip to avoid
+        // incorrectly marking apply completed on tasks artifact alone.
+        // apply.RecoverSkip field (bool) gates this — see Phase struct note.
+        if desc.RecoverSkip {
+            continue
+        }
+        path := filepath.Join(changeDir, desc.ArtifactFile)
+        info, err := os.Stat(path)
+        if err != nil {
+            continue
+        }
+        if info.IsDir() {
+            entries, _ := os.ReadDir(path)
+            if len(entries) == 0 {
+                continue
+            }
+        }
+        s.Phases[ph] = StatusCompleted
+    }
+    s.CurrentPhase = s.nextReady()
+    s.UpdatedAt = time.Now().UTC()
+    return s
+}
+```
+
+**`apply` special case**: `artifacts.go` maps `apply` → `"tasks.md"` (same file as `tasks`). The existing `Recover()` deliberately excludes `apply` from recovery because its artifact is indistinguishable from `tasks`. The `Phase` struct gains a `RecoverSkip bool` field to encode this. `apply`'s registration sets `RecoverSkip: true`.
+
+The `Phase` struct updated to include this field:
+
+```go
+type Phase struct {
+    Name          string
+    Prerequisites []string
+    NextPhases    []string
+    ArtifactFile  string
+    RecoverSkip   bool          // true = Recover() skips this phase
+    CacheInputs   []string
+    CacheTTL      time.Duration
+    Assemble      Assembler
+}
+```
+
+---
+
+### `internal/artifacts/artifacts.go`
+
+**Before**: Package-level exported map:
+
+```go
+var ArtifactFileName = map[state.Phase]string{ ... } // 10 entries
+```
+
+**After**: Map deleted. Exported function replaces it (same lookup semantics, backward-compatible call sites):
+
+```go
+// ArtifactFileName returns the canonical artifact filename for a phase.
+// Returns ("", false) for phases with no artifact (verify, archive are excluded
+// but actually have entries — see proposal; all 10 phases are in the registry).
+func ArtifactFileName(ph state.Phase) (string, bool) {
+    desc, ok := phase.DefaultRegistry.Get(string(ph))
+    if !ok {
+        return "", false
+    }
+    return desc.ArtifactFile, ok
+}
+```
+
+**Call site update in `artifacts/promote.go`**: The one direct call to `ArtifactFileName[phase]` (line 23) becomes:
+
+```go
+finalName, ok := ArtifactFileName(phase)
+if !ok || finalName == "" {
+    return "", fmt.Errorf("no artifact mapping for phase: %s", phase)
+}
+```
+
+`PendingFileName` is unchanged.
+
+**Note on naming collision**: The exported `ArtifactFileName` var becomes an exported `ArtifactFileName` func. Go permits this (identifier can be either). All existing call sites use `ArtifactFileName[phase]` (map index) which must change to `ArtifactFileName(phase)` (function call). The compiler catches all missed sites.
+
+---
+
+### `internal/context/context.go`
+
+**Before**: `dispatchers` map (8 entries) and `Assembler`/`Params` type definitions.
+
+```go
+type Assembler func(w io.Writer, p *Params) error
+type Params struct { ... }
+var dispatchers = map[state.Phase]Assembler{ ... }
+```
+
+**After**:
+
+1. `Assembler` type alias removed from `context` — it now lives in `internal/phase` as `phase.Assembler`.
+2. `context.Params` kept as-is (same fields). `phase.AssemblerParams` is defined with identical fields. `context.Params` becomes a type alias: `type Params = phase.AssemblerParams`. This makes the rename zero-impact at all call sites that use `*context.Params` or `context.Params{...}`.
+3. `dispatchers` map deleted. `Assemble()` reads from registry.
+
+```go
+// context/context.go — after
+// Params is a type alias for phase.AssemblerParams.
+// All existing usage of *context.Params and context.Params{} continues to compile.
+type Params = phase.AssemblerParams
+
+// Assemble — after (key change: dispatcher lookup)
+func Assemble(w io.Writer, ph state.Phase, p *Params) error {
+    desc, ok := phase.DefaultRegistry.Get(string(ph))
+    if !ok || desc.Assemble == nil {
+        return fmt.Errorf("no assembler for phase: %s", ph)
+    }
+    // ... rest of function unchanged (cache check, size guard, events)
+    if err := desc.Assemble(&buf, p); err != nil {
+        return err
+    }
+    // ...
+}
+```
+
+4. `init()` in `context.go` registers assemblers:
+
+```go
+func init() {
+    for _, pair := range []struct {
+        name string
+        fn   phase.Assembler
+    }{
+        {"explore", AssembleExplore},
+        {"propose", AssemblePropose},
+        {"spec",    AssembleSpec},
+        {"design",  AssembleDesign},
+        {"tasks",   AssembleTasks},
+        {"apply",   AssembleApply},
+        {"review",  AssembleReview},
+        {"clean",   AssembleClean},
+    } {
+        phase.DefaultRegistry.SetAssembler(pair.name, pair.fn)
+    }
+}
+```
+
+Individual assembler files (`explore.go`, `propose.go`, etc.) change only their function signatures from `func(w io.Writer, p *Params) error` — which now resolves to `phase.AssemblerParams` via the alias. No body changes required.
+
+---
+
+### `internal/context/cache.go`
+
+**Before**: Two package-level maps, both keyed on plain `string`:
+
+```go
+var phaseTTL    = map[string]time.Duration{ ... } // 7 entries
+var phaseInputs = map[string][]string{ ... }      // 8 entries
+```
+
+Referenced in `tryCachedContext`, `saveContextCache`, `CheckCacheIntegrity`.
+
+**After**: Both maps deleted. Registry lookup replaces each access:
+
+```go
+// tryCachedContext — after (key changes only)
+func tryCachedContext(changeDir, phase, skillsPath string) ([]byte, bool) {
+    desc, ok := phaseDefaultRegistry().Get(phase)
+    inputs := []string{}
+    if ok {
+        inputs = desc.CacheInputs
+    }
+    // ... hash computation unchanged ...
+    if desc.CacheTTL > 0 {
+        // TTL check — same logic, reads desc.CacheTTL
+    }
+    // ...
+}
+```
+
+`phaseDefaultRegistry()` is a local helper returning `phase.DefaultRegistry` — avoids repeating the package-qualified name and makes test injection possible.
+
+`saveContextCache` likewise reads `desc.CacheInputs` from registry.
+
+`CheckCacheIntegrity` reads `desc.CacheInputs` from registry instead of `phaseInputs[phase]`.
+
+**`explore` has no cache inputs** (empty `CacheInputs: []string{}`). The existing behavior — `tryCachedContext` passing `nil`/empty inputs, which still hashes SKILL.md — is preserved unchanged. Registry returns an empty slice; `inputHash` handles nil/empty identically.
+
+---
+
+## Custom Phase Registration API
+
+Third-party or test code registers a custom phase before the first registry `Get()` call:
+
+```go
+phase.DefaultRegistry.Register(phase.Phase{
+    Name:          "my-phase",
+    Prerequisites: []string{"design"},
+    NextPhases:    []string{"tasks"},
+    ArtifactFile:  "my-phase.md",
+    CacheInputs:   []string{"design.md"},
+    CacheTTL:      1 * time.Hour,
+    Assemble:      myAssemblerFunc,
+})
+```
+
+After registration, `state.AllPhases()` includes `"my-phase"`, `context.Assemble()` can dispatch to it, and `artifacts.ArtifactFileName()` returns its artifact name.
+
+**Ordering constraint**: Custom phases appended after built-ins appear last in `AllPhases()` and `nextReady()`. This is correct for phases that succeed built-in phases. For insertion at a specific position, the caller must register before the `DefaultRegistry` is sealed. This constraint is documented in `Registry.Register` godoc.
+
+**`validNextPhases` / `NextPhases`**: The `NextPhases` field on the current phase and `Prerequisites` on the successor must be consistent. `Register` validates this: for each name in `p.NextPhases`, if that phase is already registered, its `Prerequisites` must include `p.Name`. Inconsistencies panic at startup. This is the same invariant the existing hardcoded maps relied on implicitly.
+
+---
+
+## Registry Unit Tests: `internal/phase/registry_test.go`
+
+The test file validates structural invariants without testing assembler behavior:
+
+```go
+func TestBuiltinPhaseCount(t *testing.T)          // == 10
+func TestBuiltinPhaseNamesUnique(t *testing.T)     // no duplicates
+func TestPrerequisiteGraphAcyclic(t *testing.T)    // DFS cycle detection
+func TestVerifyAndArchiveHaveNilAssemble(t *testing.T)
+func TestVerifyAndArchiveHaveEmptyArtifactFile(t *testing.T) // for verify; archive has one
+func TestAllPhasesOrderMatchesPipeline(t *testing.T) // explore first, archive last
+func TestCustomPhaseRegistration(t *testing.T)     // Register + Get round-trips
+func TestSealedRegistryPanicsOnRegister(t *testing.T)
+```
+
+Note on `archive`: `archive` has `ArtifactFile: "archive-manifest.md"` (matches current `ArtifactFileName` map). `archive` has nil `Assemble`. The test that checks nil assembler phases covers both `verify` and `archive`. The test checking empty `ArtifactFile` covers only `verify` (the one phase with no recovery artifact and no final artifact in the current `Recover()` map).
+
+---
+
+## Resolved Open Questions
+
+**`context.Params` vs `phase.AssemblerParams`**: All fields of `context.Params` (`ChangeDir`, `ChangeName`, `Description`, `ProjectDir`, `Config`, `SkillsPath`, `Stderr`, `Verbosity`, `Broker`) are used inside assembler functions. Using a type alias (`type Params = phase.AssemblerParams`) gives zero blast radius at call sites.
+
+**Registry mutability after startup**: `Register()` and `SetAssembler()` panic after `sealed = true`. First `Get()` or `All()` seals the registry. This prevents any late registration that could race `AssembleConcurrent`.
+
+**`nextReady()` ordering with custom phases**: Custom phases appended after built-ins are considered last. This is correct default behavior. No position hint needed for this change; documented as a constraint.
+
+**`Recover()` rebuild**: Yes, `Recover()` is driven from the registry in this change. The `RecoverSkip` field handles the `apply`/`tasks` artifact collision explicitly. This is cleaner than maintaining a separate inline map.
+
+---
+
+## Risk Summary
+
+| Risk | Where | Mitigation |
+|------|-------|------------|
+| `state → phase → state` import cycle | `phase` must not import `state` | Registry uses `string`, not `state.Phase`; conversion at boundary |
+| `context → phase → context` import cycle | `phase` must not import `context` | `SetAssembler` wires functions from `context.init()` after registry built |
+| `ArtifactFileName` var→func rename | `artifacts/promote.go` | Single call site; compiler catches all misses |
+| `apply` recovery collision with `tasks` | `state/state.go` `Recover()` | `RecoverSkip: true` on `apply` Phase; same as current exclusion |
+| Registry sealed too early in tests | `registry_test.go` | Tests use a fresh `&Registry{}` per test, not `DefaultRegistry` |
+| `phaseInputs["explore"]` = empty, `phaseTTL` has no "explore" key | `cache.go` | Empty slice + zero TTL both handled identically before and after |
+

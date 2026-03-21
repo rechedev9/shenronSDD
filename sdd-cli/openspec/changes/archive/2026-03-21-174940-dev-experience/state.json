@@ -1,0 +1,20 @@
+{
+  "name": "dev-experience",
+  "description": "Phase 3 developer experience: sdd doctor diagnostic command, flexible phase references with abbreviations and indexes, multi-verbosity output levels",
+  "current_phase": "archive",
+  "phases": {
+    "apply": "completed",
+    "archive": "pending",
+    "clean": "completed",
+    "design": "completed",
+    "explore": "completed",
+    "propose": "completed",
+    "review": "completed",
+    "spec": "completed",
+    "tasks": "completed",
+    "verify": "completed"
+  },
+  "created_at": "2026-03-21T14:06:02.34850681Z",
+  "updated_at": "2026-03-21T18:50:00Z",
+  "base_ref": "1d808c0f2e64bbdd761b1f44485d958da67c72a6"
+}

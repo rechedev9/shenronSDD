@@ -1,0 +1,20 @@
+{
+  "name": "phase-interface",
+  "description": "Define a Phase interface that makes phases pluggable, self-documenting, and testable. Custom phases can be added without modifying the core state machine. Refactor existing phase assemblers to implement the interface.",
+  "current_phase": "archive",
+  "phases": {
+    "apply": "completed",
+    "archive": "pending",
+    "clean": "completed",
+    "design": "completed",
+    "explore": "completed",
+    "propose": "completed",
+    "review": "completed",
+    "spec": "completed",
+    "tasks": "completed",
+    "verify": "completed"
+  },
+  "created_at": "2026-03-21T16:50:16.094750402Z",
+  "updated_at": "2026-03-21T18:50:00Z",
+  "base_ref": "eed501dee8330c6188aa7002aff27fbfcf4e019b"
+}

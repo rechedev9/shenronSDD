@@ -1,0 +1,765 @@
+
+--- SKILL ---
+
+---
+name: sdd-tasks
+description: >
+  Break design into phased, numbered implementation checklist. Tasks are grouped by phase and small enough for one session.
+  Trigger: When both sdd-spec and sdd-design are complete, or when user runs /sdd-continue.
+license: MIT
+metadata:
+  version: "1.0"
+---
+
+# SDD Tasks
+
+You are executing the **tasks** phase inline. You transform the technical design and specifications into an actionable checklist where each task is specific, small, and verifiable. Tasks are the bridge between planning and implementation.
+
+## Activation
+
+User runs `/sdd-continue` after both spec and design are complete. Reads `openspec/changes/{changeName}/design.md`, all spec files in `openspec/changes/{changeName}/specs/`, and `proposal.md` for context.
+
+## Prerequisites
+
+This phase has strict dependencies:
+- **sdd-spec**: MUST be complete (specs define WHAT to test)
+- **sdd-design**: MUST be complete (design defines WHAT to build and WHERE)
+- **sdd-propose**: MUST be approved (proposal defines scope and success criteria)
+
+If either spec or design is missing, return `status: error` with a message indicating which prerequisite is incomplete.
+
+## Execution Steps
+
+### Step 1: Load Project Context
+
+1. Read `openspec/config.yaml` for:
+   - Task phase rules (`phases.tasks`)
+   - Phase ordering conventions
+   - Task format conventions
+   - Verification commands (typecheck, lint, test)
+2. Read `CLAUDE.md` for project-specific constraints (file length limits, testing patterns, type strictness, error handling patterns).
+
+### Step 2: Read Design Document
+
+Read `design.md` and extract:
+
+1. **File Changes table**: Every file that will be created, modified, or deleted.
+   - Categorize each file by its role: type definition, business logic, API handler, database, UI component, test, configuration
+2. **Interfaces and Contracts**: Types that must be defined before implementation.
+3. **Architecture Decisions**: Constraints that affect task ordering.
+4. **Testing Strategy table**: Every test that needs to be written.
+5. **Migration steps**: Database or infrastructure changes.
+6. **Dependencies between files**: Which files must exist before others can be written.
+
+### Step 3: Read Spec Files
+
+Read all spec files and extract:
+
+1. **Requirements list**: Every REQ-{DOMAIN}-{NNN} with its priority (MUST/SHOULD/MAY).
+2. **Scenarios**: Every Given/When/Then scenario (these become test cases).
+3. **Acceptance criteria summary**: The verification checklist.
+4. Map each requirement to the design component that implements it.
+5. Map each scenario to the test file that will verify it.
+
+### Step 4: Read Proposal (if available)
+
+If proposal path is provided, read to extract:
+1. **Success criteria**: The ultimate verification checklist.
+2. **Rollback plan**: Influences cleanup tasks.
+3. **Out-of-scope items**: Ensures tasks do not accidentally include excluded work.
+
+### Step 5: Bottom-Up Phase Assignment
+
+Assign tasks to numbered phases following a strict **bottom-up** philosophy:
+
+> **Build robust base abstractions first. Make the primitives flawless so the high-level logic becomes trivial.**
+
+- Phase 1 contains the lowest-level work: types, schemas, config, shared utilities — things with zero internal dependencies.
+- Each subsequent phase builds on the previous: business logic consumes types, API/UI consumes business logic, tests consume implementations, cleanup finalizes.
+- Create as many or as few phases as the change requires. A 2-file bugfix might need 2 phases; a full-stack feature might need 6.
+- No task may reference a file created in a later phase — if it does, reorder.
+- The final phase must always include running the full verification suite and confirming proposal success criteria.
+
+### Step 6: Write Individual Tasks
+
+Each task must follow this format:
+
+```markdown
+- [ ] {Phase}.{Number} {Action verb} — {specific file path}, {specific change description}
+```
+
+Task quality standards:
+
+| Criterion     | Rule                                                              |
+|---------------|-------------------------------------------------------------------|
+| Specific      | References a single file or tightly related pair (source + test)  |
+| Actionable    | Starts with a verb: Create, Add, Modify, Update, Remove, Wire    |
+| Verifiable    | Has a clear "done" state (file exists, test passes, type checks)  |
+| Small          | Completable in one sdd-apply batch (roughly 1 file or logical unit) |
+| Ordered       | Dependencies are respected (no task references an uncreated file) |
+
+Action verbs: Create (new file), Add (to existing file), Modify (change signature), Update (config/wiring), Remove (delete), Wire (connect modules), Test (write tests), Verify (run checks), Migrate (DB/data).
+
+#### Task Completion States
+
+- `[ ]` Pending — not started
+- `[x]` Complete — fully implemented and verified
+- `[~]` Partial — started but not finished. Remaining work listed in apply-report.md. Counts as 0.5 for metrics. Re-run `/sdd-apply` for the same phase before advancing.
+
+### Step 7: Mark Parallelizable Tasks
+
+Within each phase, mark tasks that can run in parallel using blockquotes:
+
+```markdown
+> Tasks 2.1-2.3 can run in parallel.
+- [ ] 2.1 Create — /abs/path/to/auth.service.ts, implement token exchange
+- [ ] 2.2 Create — /abs/path/to/oauth.repository.ts, implement account storage
+> Task 2.3 depends on 2.1 and 2.2.
+- [ ] 2.3 Modify — /abs/path/to/user.service.ts, add linkOAuthAccount method
+```
+
+### Step 8: Add Requirement Traceability
+
+For each testing task, reference the spec requirement it verifies:
+
+```markdown
+- [ ] 4.1 Test — /abs/path/to/auth.service.test.ts, test OAuth2 token exchange (REQ-AUTH-001, REQ-AUTH-002)
+- [ ] 4.2 Test — /abs/path/to/oauth.validator.test.ts, test callback validation (REQ-AUTH-003)
+- [ ] 4.3 Test — /abs/path/to/auth.api.test.ts, test /api/auth/oauth/callback endpoint (REQ-AUTH-001 scenario 2)
+```
+
+### Step 9: Write tasks.md
+
+Create `openspec/changes/{change_name}/tasks.md`:
+
+```markdown
+# Implementation Tasks: {Change Name (title case)}
+
+**Change**: {change_name}
+**Date**: {ISO 8601 timestamp}
+**Status**: pending
+**Depends On**: design.md, specs/
+
+---
+
+## Summary
+
+- **Total Tasks**: {count}
+- **Phases**: {N}
+- **Estimated Files Changed**: {count from design}
+- **Test Cases Planned**: {count from specs}
+
+## Verification Commands
+
+After each phase, run the project's typecheck, lint, and test commands (detected from `openspec/config.yaml`, `CLAUDE.md`, or `package.json` scripts). All must pass with zero errors.
+
+---
+
+## Phase {N}: {Phase Name} ({N} tasks)
+
+{Description of what this phase accomplishes}
+
+> Parallelizable: {list task numbers, or "All tasks are sequential"}
+
+- [ ] {N}.1 {Action} — {file path}, {description}
+- [ ] {N}.2 {Action} — {file path}, {description}
+...
+
+**Phase {N} Checkpoint**: {What should be true after this phase completes}
+
+---
+
+{Repeat for each phase. The number and names of phases are determined by bottom-up analysis, not a fixed template.}
+
+---
+
+## Requirement Traceability Matrix
+
+| Requirement ID      | Task(s)            | Test Task(s)       | Status  |
+|---------------------|--------------------|--------------------|---------|
+| REQ-{DOMAIN}-001    | 2.1, 3.1           | 4.1                | pending |
+| REQ-{DOMAIN}-002    | 2.2                | 4.2                | pending |
+| REQ-{DOMAIN}-003    | 2.3, 3.2           | 4.3, 4.4           | pending |
+
+## Success Criteria Checklist
+
+From the proposal, all must be true when tasks are complete:
+
+- [ ] {Criterion 1 from proposal}
+- [ ] {Criterion 2 from proposal}
+- [ ] {Criterion 3 from proposal}
+- [ ] All delta specs pass (scenarios verified by tests)
+- [ ] No type/build errors (project's check command passes)
+- [ ] No lint errors (project's lint command passes)
+- [ ] All tests pass (project's test command passes)
+```
+
+### Step 10: Validate Task Completeness
+
+Before returning, validate:
+
+1. **Every file in the design's File Changes table** has at least one task.
+2. **Every requirement from specs** appears in the traceability matrix.
+3. **Every requirement has at least one test task** mapping to it.
+4. **Phase ordering respects dependencies** (no task references a file created in a later phase).
+5. **Task numbering is sequential** within each phase (1.1, 1.2, ..., 2.1, 2.2, ...).
+6. **No task is too large** (modifying more than 2-3 closely related files).
+7. **Phase checkpoints are specific** (not "things work" but "typecheck passes, auth.service.ts exports all required functions").
+8. **Success criteria from proposal** are all included in the final checklist.
+9. **Cleanup phase includes spec merging** (moving delta specs to openspec/specs/ after verification).
+
+### Step 11: Present Summary
+
+Present a markdown summary to the user, then STOP. Do not proceed automatically.
+
+**On success, output:**
+
+```markdown
+## SDD Tasks: {change_name}
+
+**Total tasks**: {N}  |  **Requirement coverage**: {coverage_percent}%
+
+### Tasks Written
+`openspec/changes/{change_name}/tasks.md`
+
+### Tasks by Phase
+| Phase | Tasks | Parallelizable |
+|-------|-------|---------------|
+| {1}: {Name} | {N} | {N} |
+| ... | ... | ... |
+
+### Coverage
+- **Files in design**: {N}  →  **Files with tasks**: {N}  ({coverage_percent}%)
+- **Requirements in specs**: {N}  →  **With tasks**: {N}  →  **With tests**: {N}
+
+{If warnings: ### ⚠ Warnings\n- {warning}\n}
+
+**Next step**: Review `openspec/changes/{change_name}/tasks.md`. When ready, run `/sdd-apply --phase 1` to begin implementation (start a fresh session with `/clear` first).
+```
+
+## Rules and Constraints
+
+1. **Tasks MUST reference specific file paths** from design.md. No vague "update the auth module" tasks.
+2. **Each task should be completable in one sdd-apply batch** -- roughly one file or one tightly related logical unit.
+3. **Phases follow strict bottom-up ordering.** No task may reference a file created in a later phase.
+4. **Use hierarchical numbering**: 1.1, 1.2, 2.1, 2.2. This enables precise references ("complete task 2.3").
+5. **Tasks depend on BOTH specs AND design.** Never generate tasks before both are complete.
+6. **Include testing tasks that map to spec scenarios.** Every MUST requirement needs a test task.
+7. **Mark parallelizable tasks explicitly** within each phase. This enables efficient parallel implementation.
+8. **Include verification checkpoints** after each phase. These are not optional -- they catch issues early.
+9. **All file paths must be absolute.** Never use relative paths.
+10. **Never modify source code.** Task artifacts go in `openspec/changes/{change_name}/`.
+11. **The traceability matrix must be complete.** Every requirement maps to implementation tasks and test tasks.
+12. **Respect the project's task-size conventions.** If a file is being created with many functions, consider splitting into multiple tasks (e.g., "Create file with type exports" then "Add validation functions to file").
+13. **Testing tasks should follow project test conventions** (per CLAUDE.md and framework SKILLs — test grouping, assertion patterns, Arrange/Act/Assert).
+14. **The final cleanup task must always include running the full verification suite** as defined in `openspec/config.yaml`.
+15. **TEST GENERATION POLICY**: Do NOT generate speculative test tasks. ONLY include test tasks if: (A) A spec scenario requires verification via a specific test file (referenced in the Testing Strategy), (B) The design's Testing Strategy table maps a requirement to a test, OR (C) The task explicitly starts with "Test — ...". Do not add test tasks for "just in case" coverage.
+
+## Error Handling
+
+- If `openspec/config.yaml` does not exist: return `status: error` recommending `sdd-init`.
+- If `design.md` does not exist: return `status: error` with message "Design must be complete before generating tasks."
+- If no spec files exist: return `status: error` with message "Specs must be complete before generating tasks."
+- If design and specs are inconsistent (design mentions files not covered by specs, or vice versa): warn but proceed, noting gaps.
+- All errors include the phase name (`tasks`) and a human-readable message.
+
+## PARCER Contract
+
+```yaml
+phase: tasks
+preconditions:
+  - spec files exist in openspec/changes/{changeName}/specs/
+  - design.md exists at openspec/changes/{changeName}/
+postconditions:
+  - tasks.md written with ≥1 phase containing ≥1 task
+  - each task references a spec scenario or design component
+  - tasks.md contains ≥1 task across ≥1 phase
+```
+
+
+--- CHANGE ---
+
+Name: context-cascade
+Description: Phase 2 context cascade improvements: structured decision log, priority-weighted context inclusion, completed tasks summary promotion to review and clean phases
+
+--- SPECIFICATIONS ---
+
+### spec.md
+
+# Spec: context-cascade (Phase 2)
+
+Change: context-cascade
+Phase: spec
+Date: 2026-03-21
+Domain: context-assembly
+
+---
+
+## Overview
+
+Delta spec. Three targeted improvements to context assembly:
+
+1. **Structured Decision Extraction** — replace `extractFirst` for proposal.md and design.md in `buildSummary` with a new `extractDecisions` function that surfaces `key: value` pairs and `## Decisions` / `## Architecture` section content.
+2. **Completed Tasks in Review and Clean** — emit a `COMPLETED TASKS` section in `AssembleReview` and `AssembleClean` by calling the already-existing `extractCompletedTasks`.
+3. **Cache Version Bump** — increment `cacheVersion` from `4` to `5` to invalidate stale entries produced by the old format.
+
+No new dependencies. No new exported types. No breaking changes to existing command interfaces.
+
+---
+
+## 2.1 Structured Decision Extraction
+
+### Problem
+
+`buildSummary` calls `extractFirst(content, "##", 3)` for both proposal.md and design.md. This returns the first three non-empty lines after the first `##` heading — typically boilerplate prose, not actionable decisions. Design files often encode decisions as `key: value` pairs or under `## Decisions` / `## Architecture` sections, which `extractFirst` does not preferentially target.
+
+### ADDED Requirements
+
+**CA-01** `internal/context/summary.go` MUST define a new unexported function:
+
+```
+func extractDecisions(content string) string
+```
+
+**CA-02** `extractDecisions` MUST scan `content` for `key: value` pairs (single-line, colon-separated, not inside fenced code blocks) and return up to five such pairs joined by `"; "`.
+
+**CA-03** `extractDecisions` MUST collect content lines under `## Decisions` or `## Architecture` headings (case-insensitive match on the heading text, stopping at the next `##` heading or end of content) and return up to three non-empty lines joined by `" "` when no `key: value` pairs are found.
+
+**CA-04** When neither structured `key: value` pairs nor a `## Decisions` / `## Architecture` section is found, `extractDecisions` MUST fall back to `extractFirst(content, "##", 3)`.
+
+**CA-05** Lines inside fenced code blocks (delimited by ` ``` `) MUST be excluded from `key: value` scanning. `extractDecisions` MUST toggle a `inFence bool` flag on ` ``` ` prefixed lines.
+
+**CA-06** `buildSummary` MUST replace the two `extractFirst` calls for proposal.md and design.md with `extractDecisions`:
+
+- For proposal.md: `"Proposal: " + extractDecisions(string(data))`
+- For design.md: `"Design: " + extractDecisions(string(data))`
+
+**CA-07** The exploration.md and review-report.md extraction calls in `buildSummary` MUST remain unchanged (still use `extractFirst`).
+
+### Scenarios
+
+**WHEN** design.md contains `Language: Go` and `BuildTool: make` outside code fences
+**THEN** `extractDecisions` returns `"Language: Go; BuildTool: make"`
+
+**WHEN** design.md has a `## Decisions` section with three prose lines and no `key: value` pairs
+**THEN** `extractDecisions` returns those three lines joined by `" "`
+
+**WHEN** design.md has `key: value` pairs only inside ` ``` ` fenced blocks
+**THEN** `extractDecisions` ignores them and falls back to section or `extractFirst` behavior
+
+**WHEN** proposal.md has no `key: value` pairs and no `## Decisions` or `## Architecture` heading
+**THEN** `extractDecisions` returns the same result as `extractFirst(content, "##", 3)`
+
+**WHEN** design.md has both `key: value` pairs and a `## Decisions` section
+**THEN** `extractDecisions` returns the `key: value` pairs (pairs take priority)
+
+---
+
+## 2.2 Completed Tasks in Review and Clean
+
+### Problem
+
+`AssembleReview` and `AssembleClean` load tasks.md but emit its raw content verbatim as the `TASKS` section. Reviewers and cleanup agents have to scan the full task list to identify what was actually done. `extractCompletedTasks` already exists in `summary.go` and produces a compact `"section: task"` summary of `- [x]` items.
+
+### ADDED Requirements
+
+**CA-08** `AssembleReview` [review.go] MUST call `extractCompletedTasks(string(tasks))` after loading tasks.md and emit the result as a `COMPLETED TASKS` section immediately before the `TASKS` section:
+
+```go
+writeSectionStr(w, "COMPLETED TASKS", extractCompletedTasks(string(tasks)))
+writeSection(w, "TASKS", tasks)
+```
+
+**CA-09** `AssembleClean` [clean.go] MUST call `extractCompletedTasks(string(tasks))` after loading tasks.md and emit the result as a `COMPLETED TASKS` section immediately before the `TASKS` section:
+
+```go
+writeSectionStr(w, "COMPLETED TASKS", extractCompletedTasks(string(tasks)))
+writeSection(w, "TASKS", tasks)
+```
+
+**CA-10** The existing `TASKS` section in both assemblers MUST be preserved unchanged; `COMPLETED TASKS` is an additional section, not a replacement.
+
+**CA-11** When `extractCompletedTasks` returns `"(no tasks completed yet)"`, the `COMPLETED TASKS` section MUST still be emitted with that value.
+
+### Scenarios
+
+**WHEN** tasks.md contains `- [x] Write unit tests` under `## Phase: apply`
+**THEN** the assembled context for review includes a `COMPLETED TASKS` section containing `"## Phase: apply: Write unit tests"`
+
+**WHEN** tasks.md contains only unchecked `- [ ]` items
+**THEN** the `COMPLETED TASKS` section contains `"(no tasks completed yet)"`
+
+**WHEN** `AssembleReview` is called
+**THEN** section order in the writer is: `SKILL`, `CHANGE`, `SPECIFICATIONS`, `DESIGN`, `COMPLETED TASKS`, `TASKS`, `GIT DIFF`, and optionally `PROJECT RULES`
+
+**WHEN** `AssembleClean` is called
+**THEN** section order in the writer is: `SKILL`, `CHANGE`, `PIPELINE CONTEXT`, `VERIFY REPORT`, `COMPLETED TASKS`, `TASKS`, and optionally `DESIGN`, `SPECIFICATIONS`
+
+---
+
+## 2.3 Cache Version Bump
+
+### Problem
+
+Adding `COMPLETED TASKS` to the review and clean assembler output changes the format of cached context entries for those phases. Any entry written with the old format (version 4) will be served stale until TTL expiry.
+
+### ADDED Requirements
+
+**CA-12** `cacheVersion` in `internal/context/cache.go` MUST be changed from `4` to `5`.
+
+**CA-13** The comment above `cacheVersion` MUST list "adding new sections to assemblers" among the bump triggers — this condition is already present in the existing comment; no change required if it already reads that way.
+
+### Scenarios
+
+**WHEN** a `.cache/*.hash` file encodes a hash prefixed with `v4:`
+**THEN** `tryCachedContext` returns a cache miss because `inputHash` now emits `v5:`, causing the stored hash to differ from the computed hash
+
+**WHEN** `cacheVersion` is `5`
+**THEN** `LoadPipelineMetrics` rejects any `metrics.json` with `"version": 4` and returns a fresh empty struct
+
+---
+
+## Affected Files
+
+| File | Changes |
+|------|---------|
+| `internal/context/summary.go` | Add `extractDecisions`; update `buildSummary` calls for proposal.md and design.md |
+| `internal/context/review.go` | Add `COMPLETED TASKS` section via `extractCompletedTasks` |
+| `internal/context/clean.go` | Add `COMPLETED TASKS` section via `extractCompletedTasks` |
+| `internal/context/cache.go` | Bump `cacheVersion` 4 → 5 |
+
+---
+
+## Out of Scope
+
+- Changing `extractFirst` itself — it remains the fallback path inside `extractDecisions`.
+- Adding `extractDecisions` to phases other than proposal and design.
+- Configurable max pairs/lines counts — five pairs and three lines are hardcoded.
+- Emitting `COMPLETED TASKS` in phases other than review and clean.
+
+---
+
+## Eval Definitions
+
+| ID | Condition | Pass |
+|----|-----------|------|
+| CA-01 | `extractDecisions` is defined and unexported in `summary.go` | `grep -n 'func extractDecisions' summary.go` returns one match |
+| CA-02 | `key: value` pairs outside fences are collected | unit test: input with two bare pairs returns both in output |
+| CA-03 | `## Decisions` section content is returned when no pairs exist | unit test: section-only input returns section lines |
+| CA-04 | Fallback to `extractFirst` when no structured data | unit test: plain prose returns same result as `extractFirst(content, "##", 3)` |
+| CA-05 | Pairs inside code fences are ignored | unit test: fenced pair not present in output |
+| CA-06 | `buildSummary` uses `extractDecisions` for proposal and design | `grep 'extractDecisions' summary.go` returns two call sites |
+| CA-07 | `buildSummary` still uses `extractFirst` for exploration and review-report | `grep 'extractFirst' summary.go` returns two call sites |
+| CA-08 | `AssembleReview` emits `COMPLETED TASKS` before `TASKS` | assembled output for review contains `COMPLETED TASKS` section; `TASKS` section follows it |
+| CA-09 | `AssembleClean` emits `COMPLETED TASKS` before `TASKS` | assembled output for clean contains `COMPLETED TASKS` section; `TASKS` section follows it |
+| CA-10 | Raw `TASKS` section still present in both assemblers | `TASKS` section appears in assembled output after `COMPLETED TASKS` |
+| CA-11 | Empty task list produces sentinel value | tasks.md with no `- [x]` → `COMPLETED TASKS` section body is `(no tasks completed yet)` |
+| CA-12 | `cacheVersion` is `5` | `grep 'cacheVersion = 5' cache.go` returns one match |
+| CA-13 | Old v4 cache entries are rejected | `tryCachedContext` returns `(nil, false)` for a hash file written under version 4 |
+
+
+--- DESIGN ---
+
+# Design: context-cascade
+
+## Overview
+
+Three targeted changes to `internal/context/`:
+
+1. Add `extractDecisions()` to `summary.go`, replace `extractFirst()` calls for proposal and design in `buildSummary()`.
+2. Add `COMPLETED TASKS` section before `TASKS` in `AssembleReview()` and `AssembleClean()`.
+3. Bump `cacheVersion` from 4 to 5.
+
+---
+
+## File Changes
+
+| File | Change |
+|------|--------|
+| `/home/reche/projects/SDDworkflow/sdd-cli/internal/context/summary.go` | Add `extractDecisions()`; update two call sites in `buildSummary()` |
+| `/home/reche/projects/SDDworkflow/sdd-cli/internal/context/review.go` | Insert `COMPLETED TASKS` section before `TASKS` write |
+| `/home/reche/projects/SDDworkflow/sdd-cli/internal/context/clean.go` | Insert `COMPLETED TASKS` section before `TASKS` write |
+| `/home/reche/projects/SDDworkflow/sdd-cli/internal/context/cache.go` | `cacheVersion = 4` → `cacheVersion = 5` |
+| `/home/reche/projects/SDDworkflow/sdd-cli/internal/context/context_test.go` | Add unit tests for `extractDecisions`; update section-presence assertions for review and clean |
+
+---
+
+## 1. `extractDecisions` Algorithm
+
+### Signature
+
+```go
+func extractDecisions(content string) string
+```
+
+Unexported. Returns a single string — either a "; "-joined list of key-value decisions, a " "-joined block of header-scoped lines, or the `extractFirst` fallback.
+
+### Full Algorithm
+
+```
+lines  = split content on "\n"
+inFence = false
+kvPairs = []string{}          // CA-02 bucket
+headerLines = []string{}      // CA-03 bucket
+inDecisionSection = false
+
+for each line:
+    trimmed = strings.TrimSpace(line)
+
+    // CA-05: toggle fence tracking on ``` lines
+    if strings.HasPrefix(trimmed, "```"):
+        inFence = !inFence
+        continue
+
+    if inFence:
+        continue
+
+    // CA-03: detect decision/architecture section headers
+    if strings.HasPrefix(trimmed, "## "):
+        header = strings.ToLower(strings.TrimPrefix(trimmed, "## "))
+        inDecisionSection = (header == "decisions" || header == "architecture")
+        continue
+
+    // CA-03: collect lines inside a decision/architecture section
+    if inDecisionSection && trimmed != "":
+        headerLines = append(headerLines, trimmed)
+        if len(headerLines) >= 3:
+            inDecisionSection = false   // cap; stop collecting more
+        continue
+
+    // CA-02: scan for key: value pairs anywhere outside fences
+    if !inDecisionSection && strings.Contains(trimmed, ": "):
+        parts = strings.SplitN(trimmed, ": ", 2)
+        key   = strings.TrimSpace(parts[0])
+        value = strings.TrimSpace(parts[1])
+        // key must be a short label (no spaces, not a URL fragment)
+        if isDecisionKey(key) && value != "":
+            kvPairs = append(kvPairs, key+": "+value)
+            if len(kvPairs) >= 5:
+                break outer loop
+
+// Result priority:
+if len(kvPairs) > 0:
+    return strings.Join(kvPairs, "; ")
+if len(headerLines) > 0:
+    return strings.Join(headerLines, " ")
+// CA-04: fallback
+return extractFirst(content, "##", 3)
+```
+
+### `isDecisionKey` helper (inline, not exported)
+
+```go
+// Returns true if s looks like a short label: no spaces, 1–30 chars,
+// not starting with http/- or a digit.
+func isDecisionKey(s string) bool {
+    if len(s) == 0 || len(s) > 30 {
+        return false
+    }
+    if strings.ContainsAny(s, " \t") {
+        return false
+    }
+    if strings.HasPrefix(s, "http") || strings.HasPrefix(s, "-") {
+        return false
+    }
+    return true
+}
+```
+
+This keeps the function self-contained in `summary.go`. No new file required.
+
+### Updated `buildSummary` Call Sites
+
+Replace:
+```go
+if intent := extractFirst(string(data), "##", 3); intent != "" {
+    sections = append(sections, "Proposal: "+intent)
+}
+```
+With:
+```go
+if intent := extractDecisions(string(data)); intent != "" {
+    sections = append(sections, "Proposal: "+intent)
+}
+```
+
+Same substitution for the `design.md` block (`decision` → `extractDecisions`).
+
+The `exploration.md` and `review-report.md` calls in `buildSummary` are **not** changed — they use `extractFirst` with `"##"` and `"Verdict"` respectively, which are appropriate for their formats.
+
+---
+
+## 2. Section Ordering Changes
+
+### `AssembleReview` (review.go)
+
+Current order:
+```
+SKILL → CHANGE → SPECIFICATIONS → DESIGN → TASKS → GIT DIFF → [PROJECT RULES]
+```
+
+New order:
+```
+SKILL → CHANGE → SPECIFICATIONS → DESIGN → COMPLETED TASKS → TASKS → GIT DIFF → [PROJECT RULES]
+```
+
+Implementation — insert after `writeSection(w, "DESIGN", design)` and before `writeSection(w, "TASKS", tasks)`:
+
+```go
+completedTasks := extractCompletedTasks(string(tasks))
+writeSectionStr(w, "COMPLETED TASKS", completedTasks)
+writeSection(w, "TASKS", tasks)
+```
+
+`tasks` is `[]byte`; cast to `string` for `extractCompletedTasks`. No new load needed — tasks is already loaded above.
+
+### `AssembleClean` (clean.go)
+
+Current order:
+```
+SKILL → CHANGE → [PIPELINE CONTEXT] → VERIFY REPORT → TASKS → [DESIGN] → [SPECIFICATIONS]
+```
+
+New order:
+```
+SKILL → CHANGE → [PIPELINE CONTEXT] → VERIFY REPORT → COMPLETED TASKS → TASKS → [DESIGN] → [SPECIFICATIONS]
+```
+
+Implementation — insert after `writeSection(w, "VERIFY REPORT", verifyReport)` and before `writeSection(w, "TASKS", tasks)`:
+
+```go
+completedTasks := extractCompletedTasks(string(tasks))
+writeSectionStr(w, "COMPLETED TASKS", completedTasks)
+writeSection(w, "TASKS", tasks)
+```
+
+`extractCompletedTasks` already handles the empty/no-completed case by returning `"(no tasks completed yet)"`, so no guard needed.
+
+---
+
+## 3. Cache Version Bump
+
+`cache.go` line 21: `const cacheVersion = 4` → `const cacheVersion = 5`
+
+This invalidates all existing `.cache/*.hash` files, forcing re-assembly on next run. No migration logic needed — `tryCachedContext` treats version mismatches as cache misses by recomputing `inputHash` with the new version prefix `"v5:"`.
+
+---
+
+## Architecture Decisions
+
+### Decision 1: Where to place `isDecisionKey`
+
+**Option A** — Inline anonymous check in `extractDecisions` body.
+- Pro: no extra symbol; function is self-contained.
+- Con: duplicates logic if ever reused; harder to unit-test.
+
+**Option B** — Unexported helper `isDecisionKey(s string) bool` in same file.
+- Pro: independently testable; named intent.
+- Con: adds one more unexported symbol.
+
+**Option C** — Inline regex `regexp.MustCompile`.
+- Pro: expressive.
+- Con: runtime cost; overkill for a simple predicate; adds regex dep.
+
+**Chosen: Option B.** The logic (length, no-spaces, no-http-prefix) is non-trivial enough that naming it aids readability and test coverage.
+
+### Decision 2: Where `COMPLETED TASKS` goes in the section sequence
+
+**Option A** — After TASKS (appended summary).
+- Pro: reviewer sees full task list first, then summary.
+- Con: completed context arrives after the incomplete list; AI must backtrack.
+
+**Option B** — Before TASKS (prefix summary).
+- Pro: completed context frames the incomplete tasks; matches how humans scan status before detail.
+- Con: slight redundancy if all tasks are complete.
+
+**Option C** — Replace TASKS with a merged section.
+- Pro: single section; no duplication.
+- Con: breaks existing section-label assertions in tests; more invasive refactor.
+
+**Chosen: Option B (before TASKS).** Matches the spec (CA-08/09 both say "before TASKS") and the cognitive pattern: state what's done before listing what remains.
+
+### Decision 3: `extractDecisions` result when both kvPairs and headerLines are populated
+
+**Option A** — kvPairs wins (current design). Header section lines are secondary.
+- Pro: `key: value` pairs are the most structured signal in a design doc.
+- Con: a doc with one stray `key: value` line suppresses richer section content.
+
+**Option B** — headerLines wins.
+- Pro: explicit section markup is more intentional than ad-hoc `key: value` lines.
+- Con: many design docs lack `## Decisions` headers.
+
+**Option C** — Merge both, deduplicate.
+- Pro: most complete.
+- Con: combined string may exceed token budget; complexity increase.
+
+**Chosen: Option A.** `key: value` scanning is the primary signal per CA-02. The `## Decisions` / `## Architecture` collector is a secondary enrichment path. Fallback chain (kv → header → extractFirst) covers all document styles without merging logic.
+
+---
+
+## Testing Strategy
+
+### Unit Tests (all in `context_test.go`, `package context`)
+
+#### `TestExtractDecisions` — table-driven
+
+Test cases:
+
+| Case | Input | Expected output |
+|------|-------|-----------------|
+| kv pair present | `"approach: middleware\nfallback: noop"` | `"approach: middleware; fallback: noop"` |
+| kv inside code fence skipped | `"```\nkey: val\n```\nother: x"` | `"other: x"` |
+| header section collected | `"## Decisions\nUse adapter pattern\nNo ORM"` | `"Use adapter pattern No ORM"` |
+| kv cap at 5 | 6 `key: val` lines | 5 pairs in output |
+| header cap at 3 lines | 4 lines under `## Decisions` | 3 lines joined |
+| fallback to extractFirst | plain prose, no kv, no decision header | first section content |
+| empty input | `""` | `""` (fallback returns empty) |
+| architecture header | `"## Architecture\nLayer separation"` | `"Layer separation"` |
+
+#### `TestIsDecisionKey`
+
+Cover: empty string, >30 chars, contains space, starts with `http`, starts with `-`, valid short label.
+
+#### `TestAssembleReviewCompletedTasks`
+
+Extend existing `TestAssembleReview`:
+
+```go
+os.WriteFile(filepath.Join(changeDir, "tasks.md"), []byte(`# Tasks
+## Phase 1
+- [x] Done task
+- [ ] Pending task
+`), 0o644)
+// Assert:
+if !strings.Contains(out, "--- COMPLETED TASKS ---") { ... }
+if !strings.Contains(out, "Done task") { ... }
+```
+
+Also verify ordering: `COMPLETED TASKS` appears before `TASKS` in the output string via index comparison.
+
+#### `TestAssembleCleanCompletedTasks`
+
+Same pattern as above against `AssembleClean`. Requires `verify-report.md` and `tasks.md` fixtures with at least one `[x]` item.
+
+#### `TestAssembleCleanNoCompletedTasks`
+
+`tasks.md` with only `- [ ]` items. Assert `--- COMPLETED TASKS ---` is present and content is `(no tasks completed yet)`.
+
+### Regression Tests
+
+- `TestAssembleReview` — existing test passes unchanged (section labels checked remain valid; `COMPLETED TASKS` is additive).
+- `TestAssembleClean` — same.
+
+No new integration tests needed. The cache version bump has no dedicated test; the existing cache tests in `cache.go` test via `inputHash` which embeds the version string automatically.
+
+---
+
+## Implementation Sequence
+
+1. `summary.go` — add `isDecisionKey`, add `extractDecisions`, update two `buildSummary` call sites.
+2. `review.go` — insert `COMPLETED TASKS` write.
+3. `clean.go` — insert `COMPLETED TASKS` write.
+4. `cache.go` — bump `cacheVersion`.
+5. `context_test.go` — add tests.
+6. Run `go test ./internal/context/...` to verify.
+
