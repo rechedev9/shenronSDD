@@ -1,16 +1,19 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/rechedev9/shenronSDD/sdd-cli/internal/cli/errs"
 	"github.com/rechedev9/shenronSDD/sdd-cli/internal/config"
 	"github.com/rechedev9/shenronSDD/sdd-cli/internal/events"
+	"github.com/rechedev9/shenronSDD/sdd-cli/internal/store"
 	"github.com/rechedev9/shenronSDD/sdd-cli/internal/verify"
 )
 
@@ -41,6 +44,21 @@ func runVerify(args []string, stdout io.Writer, stderr io.Writer) error {
 	// Smart-skip: reuse last verify if no source files changed.
 	if skip, _ := shouldSkipVerify(cwd, changeDir); skip {
 		slog.Info("verify skipped", "reason", "no source changes since last PASS")
+
+		// Record smart-skip as passing results for dashboard charts.
+		if vdb := tryOpenStore(cwd); vdb != nil {
+			for _, cmd := range []string{"build", "lint", "test"} {
+				_ = vdb.InsertVerifyResult(context.Background(), store.VerifyResult{
+					Timestamp:   time.Now().UTC(),
+					Change:      name,
+					CommandName: cmd,
+					ExitCode:    0,
+					Passed:      true,
+				})
+			}
+			vdb.Close()
+		}
+
 		out := struct {
 			Command    string `json:"command"`
 			Status     string `json:"status"`
@@ -79,6 +97,25 @@ func runVerify(args []string, stdout io.Writer, stderr io.Writer) error {
 		return errs.WriteError(stderr, "verify", err)
 	}
 
+	// Open store once for verify results + error collection.
+	db := tryOpenStore(cwd)
+	if db != nil {
+		defer db.Close()
+	}
+
+	// Record all verify results (pass and fail) for dashboard charts.
+	if db != nil {
+		for _, r := range report.Results {
+			_ = db.InsertVerifyResult(context.Background(), store.VerifyResult{
+				Timestamp:   time.Now().UTC(),
+				Change:      name,
+				CommandName: r.Name,
+				ExitCode:    r.ExitCode,
+				Passed:      r.Passed,
+			})
+		}
+	}
+
 	// JSON output.
 	out := struct {
 		Command    string `json:"command"`
@@ -103,10 +140,6 @@ func runVerify(args []string, stdout io.Writer, stderr io.Writer) error {
 
 	// Emit VerifyFailed event for error collection.
 	if !report.Passed {
-		db := tryOpenStore(cwd)
-		if db != nil {
-			defer db.Close()
-		}
 		broker := newBroker(stderr, 0, db)
 		var failedCmds []events.VerifyFailedCommand
 		for _, r := range report.Results {

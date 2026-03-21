@@ -62,6 +62,8 @@ func runDashboard(args []string, stdout io.Writer, stderr io.Writer) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	go srv.Hub().Run(ctx)
+
 	slog.Info("dashboard started", "url", "http://"+addr)
 	return srv.ListenAndServe(ctx, addr)
 }

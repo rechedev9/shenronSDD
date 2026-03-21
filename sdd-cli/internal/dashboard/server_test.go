@@ -8,15 +8,20 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/rechedev9/shenronSDD/sdd-cli/internal/store"
 )
 
 // fakeMetrics implements MetricsReader for testing.
 type fakeMetrics struct {
-	stats  *store.TokenStats
-	tokens []store.ChangeTokens
-	errors []store.ErrorRow
+	stats         *store.TokenStats
+	tokens        []store.ChangeTokens
+	errors        []store.ErrorRow
+	tokenHistory  []store.TokenHistoryRow
+	durations     []store.PhaseDurationRow
+	cacheHistory  []store.CacheHistoryRow
+	verifyHistory []store.VerifyHistoryRow
 }
 
 func (f *fakeMetrics) TokenSummary(_ context.Context) (*store.TokenStats, error) {
@@ -34,11 +39,27 @@ func (f *fakeMetrics) RecentErrors(_ context.Context, _ int) ([]store.ErrorRow, 
 	return f.errors, nil
 }
 
+func (f *fakeMetrics) TokenHistory(_ context.Context, _ time.Time) ([]store.TokenHistoryRow, error) {
+	return f.tokenHistory, nil
+}
+
+func (f *fakeMetrics) PhaseDurations(_ context.Context) ([]store.PhaseDurationRow, error) {
+	return f.durations, nil
+}
+
+func (f *fakeMetrics) CacheHistory(_ context.Context, _ time.Time) ([]store.CacheHistoryRow, error) {
+	return f.cacheHistory, nil
+}
+
+func (f *fakeMetrics) VerifyHistory(_ context.Context, _ time.Time) ([]store.VerifyHistoryRow, error) {
+	return f.verifyHistory, nil
+}
+
 func newTestServer(t *testing.T, m MetricsReader) (*Server, string) {
 	t.Helper()
 	dir := t.TempDir()
 	changesDir := filepath.Join(dir, "changes")
-	os.MkdirAll(changesDir, 0o755)
+	_ = os.MkdirAll(changesDir, 0o755)
 	return New(m, changesDir), changesDir
 }
 
@@ -55,120 +76,28 @@ func TestHandleIndex(t *testing.T) {
 	if !strings.Contains(body, "SHENRON") {
 		t.Error("expected body to contain SHENRON")
 	}
-	if !strings.Contains(body, "htmx.min.js") {
-		t.Error("expected body to contain htmx.min.js script reference")
+	if !strings.Contains(body, "echarts.min.js") {
+		t.Error("expected body to contain echarts.min.js script reference")
+	}
+	if !strings.Contains(body, "dashboard.js") {
+		t.Error("expected body to contain dashboard.js script reference")
 	}
 }
 
-func TestHandleKPI(t *testing.T) {
-	fm := &fakeMetrics{
-		stats: &store.TokenStats{
-			TotalTokens: 42000,
-			CacheHitPct: 73.5,
-			ErrorCount:  3,
-		},
-	}
-	srv, _ := newTestServer(t, fm)
-	req := httptest.NewRequest("GET", "/fragments/kpi", nil)
-	w := httptest.NewRecorder()
-	srv.routes().ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", w.Code)
-	}
-	body := w.Body.String()
-	if !strings.Contains(body, "42000") {
-		t.Error("expected body to contain token count 42000")
-	}
-	if !strings.Contains(body, "74%") {
-		t.Error("expected body to contain cache hit pct 74%")
-	}
-	if !strings.Contains(body, "3") {
-		t.Error("expected body to contain error count")
-	}
-}
-
-func TestHandleKPI_Empty(t *testing.T) {
+func TestHandleIndex_NotFound(t *testing.T) {
 	srv, _ := newTestServer(t, &fakeMetrics{})
-	req := httptest.NewRequest("GET", "/fragments/kpi", nil)
+	req := httptest.NewRequest("GET", "/nonexistent", nil)
 	w := httptest.NewRecorder()
 	srv.routes().ServeHTTP(w, req)
 
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", w.Code)
-	}
-	body := w.Body.String()
-	if !strings.Contains(body, "0") {
-		t.Error("expected zero values in empty KPI")
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", w.Code)
 	}
 }
 
-func TestHandlePipelines_Empty(t *testing.T) {
+func TestStaticECharts(t *testing.T) {
 	srv, _ := newTestServer(t, &fakeMetrics{})
-	req := httptest.NewRequest("GET", "/fragments/pipelines", nil)
-	w := httptest.NewRecorder()
-	srv.routes().ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", w.Code)
-	}
-	body := w.Body.String()
-	if !strings.Contains(body, "No active changes") {
-		t.Error("expected empty state message")
-	}
-}
-
-func TestHandleErrors(t *testing.T) {
-	fm := &fakeMetrics{
-		errors: []store.ErrorRow{
-			{
-				Timestamp:   "2026-03-21T10:00:00Z",
-				CommandName: "test",
-				ExitCode:    1,
-				Change:      "my-change",
-				Fingerprint: "abc12345678",
-				FirstLine:   "FAIL pkg/foo",
-			},
-		},
-	}
-	srv, _ := newTestServer(t, fm)
-	req := httptest.NewRequest("GET", "/fragments/errors", nil)
-	w := httptest.NewRecorder()
-	srv.routes().ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", w.Code)
-	}
-	body := w.Body.String()
-	if !strings.Contains(body, "my-change") {
-		t.Error("expected body to contain change name")
-	}
-	if !strings.Contains(body, "FAIL pkg/foo") {
-		t.Error("expected body to contain error first line")
-	}
-	if !strings.Contains(body, "abc12345") {
-		t.Error("expected body to contain fingerprint prefix")
-	}
-}
-
-func TestHandleErrors_Empty(t *testing.T) {
-	srv, _ := newTestServer(t, &fakeMetrics{})
-	req := httptest.NewRequest("GET", "/fragments/errors", nil)
-	w := httptest.NewRecorder()
-	srv.routes().ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", w.Code)
-	}
-	body := w.Body.String()
-	if !strings.Contains(body, "No errors recorded") {
-		t.Error("expected empty state message")
-	}
-}
-
-func TestStaticHtmx(t *testing.T) {
-	srv, _ := newTestServer(t, &fakeMetrics{})
-	req := httptest.NewRequest("GET", "/static/htmx.min.js", nil)
+	req := httptest.NewRequest("GET", "/static/echarts.min.js", nil)
 	w := httptest.NewRecorder()
 	srv.routes().ServeHTTP(w, req)
 
@@ -176,6 +105,40 @@ func TestStaticHtmx(t *testing.T) {
 		t.Fatalf("expected 200, got %d", w.Code)
 	}
 	if w.Body.Len() == 0 {
-		t.Error("expected non-empty htmx.min.js response")
+		t.Error("expected non-empty echarts.min.js response")
+	}
+}
+
+func TestStaticDashboardJS(t *testing.T) {
+	srv, _ := newTestServer(t, &fakeMetrics{})
+	req := httptest.NewRequest("GET", "/static/dashboard.js", nil)
+	w := httptest.NewRecorder()
+	srv.routes().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	if w.Body.Len() == 0 {
+		t.Error("expected non-empty dashboard.js response")
+	}
+}
+
+func TestWSRouteExists(t *testing.T) {
+	srv, _ := newTestServer(t, &fakeMetrics{})
+	// Verify /ws route is registered (non-WS request gets a protocol error, not 404).
+	req := httptest.NewRequest("GET", "/ws", nil)
+	w := httptest.NewRecorder()
+	srv.routes().ServeHTTP(w, req)
+
+	// WebSocket upgrade will fail without proper headers, but it shouldn't be 404.
+	if w.Code == http.StatusNotFound {
+		t.Error("expected /ws route to be registered, got 404")
+	}
+}
+
+func TestHubCreated(t *testing.T) {
+	srv, _ := newTestServer(t, &fakeMetrics{})
+	if srv.Hub() == nil {
+		t.Error("expected Hub() to return non-nil hub")
 	}
 }

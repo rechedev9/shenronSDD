@@ -63,6 +63,46 @@ type ErrorRow struct {
 	FirstLine   string
 }
 
+// TokenHistoryRow is a single row for the token usage chart.
+type TokenHistoryRow struct {
+	Timestamp string
+	Change    string
+	Phase     string
+	Tokens    int
+	Cached    bool
+}
+
+// PhaseDurationRow is a per-phase average duration.
+type PhaseDurationRow struct {
+	Phase         string
+	AvgDurationMs int64
+}
+
+// CacheHistoryRow is a single row for the cache hit/miss chart.
+type CacheHistoryRow struct {
+	Timestamp string
+	Phase     string
+	Cached    bool
+}
+
+// VerifyHistoryRow is a single row for the verify timeline chart.
+type VerifyHistoryRow struct {
+	Timestamp   string
+	Change      string
+	CommandName string
+	ExitCode    int
+	Passed      bool
+}
+
+// VerifyResult records a single verify command result (pass or fail).
+type VerifyResult struct {
+	Timestamp   time.Time
+	Change      string
+	CommandName string
+	ExitCode    int
+	Passed      bool
+}
+
 // Open creates the parent directory if needed, opens the SQLite database,
 // applies WAL pragmas, and runs schema migrations.
 func Open(path string) (*Store, error) {
@@ -129,6 +169,15 @@ func (s *Store) migrate(ctx context.Context) error {
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_phase_events_timestamp ON phase_events(timestamp)`,
 		`CREATE INDEX IF NOT EXISTS idx_verify_events_timestamp ON verify_events(timestamp)`,
+		`CREATE TABLE IF NOT EXISTS verify_results (
+			id           INTEGER PRIMARY KEY AUTOINCREMENT,
+			timestamp    TEXT    NOT NULL,
+			change       TEXT    NOT NULL,
+			command_name TEXT    NOT NULL,
+			exit_code    INTEGER NOT NULL,
+			passed       INTEGER NOT NULL
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_verify_results_timestamp ON verify_results(timestamp)`,
 	}
 	for _, stmt := range stmts {
 		if _, err := s.db.ExecContext(ctx, stmt); err != nil {
@@ -268,6 +317,131 @@ func (s *Store) RecentErrors(ctx context.Context, limit int) ([]ErrorRow, error)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("store: error rows: %w", err)
+	}
+	return result, nil
+}
+
+// InsertVerifyResult stores a verify command result (pass/fail).
+func (s *Store) InsertVerifyResult(ctx context.Context, r VerifyResult) error {
+	passed := 0
+	if r.Passed {
+		passed = 1
+	}
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO verify_results (timestamp, change, command_name, exit_code, passed)
+		 VALUES (?, ?, ?, ?, ?)`,
+		r.Timestamp.Format(time.RFC3339), r.Change, r.CommandName,
+		r.ExitCode, passed,
+	)
+	if err != nil {
+		return fmt.Errorf("store: insert verify result: %w", err)
+	}
+	return nil
+}
+
+// TokenHistory returns token usage rows since the given time.
+func (s *Store) TokenHistory(ctx context.Context, since time.Time) ([]TokenHistoryRow, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT timestamp, change, phase, tokens, cached
+		 FROM phase_events
+		 WHERE timestamp > ?
+		 ORDER BY id`, since.Format(time.RFC3339))
+	if err != nil {
+		return nil, fmt.Errorf("store: token history: %w", err)
+	}
+	defer rows.Close()
+
+	var result []TokenHistoryRow
+	for rows.Next() {
+		var r TokenHistoryRow
+		var cached int
+		if err := rows.Scan(&r.Timestamp, &r.Change, &r.Phase, &r.Tokens, &cached); err != nil {
+			return nil, fmt.Errorf("store: scan token history: %w", err)
+		}
+		r.Cached = cached == 1
+		result = append(result, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("store: token history rows: %w", err)
+	}
+	return result, nil
+}
+
+// PhaseDurations returns per-phase average duration across all phase events.
+func (s *Store) PhaseDurations(ctx context.Context) ([]PhaseDurationRow, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT phase, AVG(duration_ms) FROM phase_events GROUP BY phase ORDER BY phase`)
+	if err != nil {
+		return nil, fmt.Errorf("store: phase durations: %w", err)
+	}
+	defer rows.Close()
+
+	var result []PhaseDurationRow
+	for rows.Next() {
+		var r PhaseDurationRow
+		if err := rows.Scan(&r.Phase, &r.AvgDurationMs); err != nil {
+			return nil, fmt.Errorf("store: scan phase duration: %w", err)
+		}
+		result = append(result, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("store: phase durations rows: %w", err)
+	}
+	return result, nil
+}
+
+// CacheHistory returns cache hit/miss rows since the given time.
+func (s *Store) CacheHistory(ctx context.Context, since time.Time) ([]CacheHistoryRow, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT timestamp, phase, cached
+		 FROM phase_events
+		 WHERE timestamp > ?
+		 ORDER BY id`, since.Format(time.RFC3339))
+	if err != nil {
+		return nil, fmt.Errorf("store: cache history: %w", err)
+	}
+	defer rows.Close()
+
+	var result []CacheHistoryRow
+	for rows.Next() {
+		var r CacheHistoryRow
+		var cached int
+		if err := rows.Scan(&r.Timestamp, &r.Phase, &cached); err != nil {
+			return nil, fmt.Errorf("store: scan cache history: %w", err)
+		}
+		r.Cached = cached == 1
+		result = append(result, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("store: cache history rows: %w", err)
+	}
+	return result, nil
+}
+
+// VerifyHistory returns verify result rows since the given time.
+func (s *Store) VerifyHistory(ctx context.Context, since time.Time) ([]VerifyHistoryRow, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT timestamp, change, command_name, exit_code, passed
+		 FROM verify_results
+		 WHERE timestamp > ?
+		 ORDER BY id`, since.Format(time.RFC3339))
+	if err != nil {
+		return nil, fmt.Errorf("store: verify history: %w", err)
+	}
+	defer rows.Close()
+
+	var result []VerifyHistoryRow
+	for rows.Next() {
+		var r VerifyHistoryRow
+		var passed int
+		if err := rows.Scan(&r.Timestamp, &r.Change, &r.CommandName, &r.ExitCode, &passed); err != nil {
+			return nil, fmt.Errorf("store: scan verify history: %w", err)
+		}
+		r.Passed = passed == 1
+		result = append(result, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("store: verify history rows: %w", err)
 	}
 	return result, nil
 }
