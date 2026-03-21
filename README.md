@@ -4,8 +4,8 @@
 
 ![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)
 ![Go: 1.24](https://img.shields.io/badge/Go-1.24-00ADD8.svg)
-![Phases: 11](https://img.shields.io/badge/Phases-11-orange.svg)
-![Version: 2.0](https://img.shields.io/badge/Version-2.0-purple.svg)
+![Phases: 10](https://img.shields.io/badge/Phases-10-orange.svg)
+![Version: 3.0](https://img.shields.io/badge/Version-3.0-purple.svg)
 
 ---
 
@@ -112,6 +112,10 @@ Claude still does **all the reasoning** — exploring, proposing, specifying, de
 $ sdd context my-feature propose
 sdd: phase=propose ↑14KB Δ3K tokens 0ms (cached)
 
+# Phase refs are flexible — abbreviations, prefixes, or indices work:
+$ sdd context my-feature p      # "p" → propose
+$ sdd context my-feature 3      # index 3 → spec
+
 # 2. Slash command feeds context to Claude sub-agent
 #    Claude writes to .pending/propose.md
 
@@ -163,6 +167,17 @@ sdd <command> [arguments]
 | `sdd list` | Active changes with current phase | 0 |
 | `sdd diff <name>` | Files changed since `sdd new` | 0 |
 | `sdd health <name>` | Pipeline health: tokens, cache stats, warnings | 0 |
+| `sdd doctor` | Validate config, cache integrity, artifact completeness | 0 |
+| `sdd dump` | Snapshot full workflow state as indented JSON | 0 |
+
+### Flags
+
+| Flag | Description |
+|------|-------------|
+| `--json` | JSON output on all subcommands (for CI/scripting) |
+| `-q` | Quiet — exit code only |
+| `-v` | Verbose — cache hit/miss, timing details |
+| `-d` | Debug — full assembly trace |
 
 ### Slash Commands (use CLI under the hood)
 
@@ -204,17 +219,42 @@ The CLI is not a wrapper — it's **infrastructure that constrains the agent**:
 
 Deterministic code orchestrates, LLM reasons.
 
+### Phase registry
+
+All phase metadata lives in a single `Phase` struct — prerequisites, artifact filenames, cache inputs, TTLs, and assembler functions. No more parallel maps across packages.
+
+```go
+phase.DefaultRegistry.Register(phase.Phase{
+    Name:          "my-phase",
+    Prerequisites: []string{"design"},
+    ArtifactFile:  "my-phase.md",
+    CacheInputs:   []string{"design.md"},
+    CacheTTL:      1 * time.Hour,
+    Assemble:      myAssemblerFunc,
+})
+```
+
+Custom phases are pluggable — register at startup, no core files modified. The registry is read-only after first access (sealed on first `Get()`).
+
+### Event broker
+
+Phase transitions, cache operations, and metrics are decoupled via a pub/sub event broker. Subscribers handle logging, metrics persistence, and cache cleanup independently. Non-blocking, context-aware, with panic recovery per subscriber.
+
+### Concurrent artifact loading
+
+`csync.LazySlice` starts goroutines eagerly at phase entry to load all potentially-needed artifacts in parallel. Blocks only when the assembler actually consumes them. Free parallelism for I/O-bound reads.
+
 ### Cache architecture
 
 ```
 openspec/changes/{name}/.cache/
-  spec.hash         # SHA256(v4:SKILL.md + proposal.md + exploration.md) | unix_timestamp
+  spec.hash         # SHA256(v6:SKILL.md + proposal.md + exploration.md) | unix_timestamp
   spec.ctx          # Pre-assembled context (served in 0ms on cache hit)
   metrics.json      # Cumulative: bytes, tokens, cache hits/misses per phase
 ```
 
 - **Content-hash**: SHA256 of input artifacts + SKILL.md + cacheVersion
-- **Per-dimension TTL**: apply=30min, spec/design=2h, propose=4h
+- **Per-dimension TTL**: apply=30min, spec/design=2h, propose=4h (defined in phase registry)
 - **Version guard**: bumping `cacheVersion` invalidates all caches
 - **Smart-skip verify**: reuses last PASSED report if no source files changed
 
@@ -238,12 +278,15 @@ shenronSDD/
   sdd-cli/                    # Go CLI binary source
     cmd/sdd/main.go           # Entry point (13 lines)
     internal/
-      cli/                    # Command routing + 11 subcommands
+      phase/                  # Phase struct, Registry — single source of truth for all phase metadata
+      cli/                    # Command routing + 13 subcommands (doctor, dump added)
       state/                  # Phase state machine, atomic persistence
       context/                # Assemblers + cache + metrics + Context Cascade
       artifacts/              # .pending write/promote/read/list
-      config/                 # Stack detection + config.yaml
+      config/                 # Stack detection + config.yaml (with version guard)
       verify/                 # Build/lint/test runner + archive
+      events/                 # Pub/sub event broker — decouples state machine from side effects
+      csync/                  # LazySlice — concurrent artifact loading
   skills/                     # SKILL.md files (loaded by sdd context)
     sdd/                      # 11 phase skills
     frameworks/               # 14+ framework skills (Go, React, TS, ...)
