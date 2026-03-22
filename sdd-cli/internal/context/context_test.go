@@ -2,12 +2,14 @@ package context
 
 import (
 	"bytes"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/rechedev9/shenronSDD/sdd-cli/internal/config"
+	"github.com/rechedev9/shenronSDD/sdd-cli/internal/phase"
 	"github.com/rechedev9/shenronSDD/sdd-cli/internal/state"
 )
 
@@ -268,7 +270,7 @@ func TestAssembleUnknownPhase(t *testing.T) {
 	}
 }
 
-func TestAssembleMissingSkill(t *testing.T) {
+func TestAssembleMissingSkillFallback(t *testing.T) {
 	t.Parallel()
 	changeDir, _, p := setupFixture(t)
 	p.SkillsPath = "/nonexistent/skills"
@@ -277,8 +279,12 @@ func TestAssembleMissingSkill(t *testing.T) {
 
 	var buf bytes.Buffer
 	err := AssemblePropose(&buf, p)
-	if err == nil {
-		t.Fatal("expected error when skill file is missing")
+	if err != nil {
+		t.Fatalf("expected embedded fallback to succeed, got: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "--- SKILL ---") {
+		t.Error("expected SKILL section from embedded fallback")
 	}
 }
 
@@ -561,5 +567,131 @@ func TestLoadSpecsMultipleFiles(t *testing.T) {
 	}
 	if strings.Contains(specs, "not a spec") {
 		t.Error("non-.md file should be ignored")
+	}
+}
+
+// --- Embedded Skills Tests ---
+
+func TestLoadSkillEmbedFallback(t *testing.T) {
+	t.Parallel()
+	phases := []string{"sdd-explore", "sdd-propose", "sdd-spec", "sdd-design", "sdd-tasks", "sdd-apply", "sdd-review", "sdd-clean"}
+	for _, p := range phases {
+		data, err := loadSkill("", p)
+		if err != nil {
+			t.Errorf("loadSkill(%q) embedded fallback failed: %v", p, err)
+			continue
+		}
+		if len(data) == 0 {
+			t.Errorf("loadSkill(%q) returned empty bytes", p)
+		}
+	}
+}
+
+func TestLoadSkillDiskOverride(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	skillDir := filepath.Join(dir, "sdd-explore")
+	os.MkdirAll(skillDir, 0o755)
+	custom := []byte("# Custom Override Skill\n")
+	os.WriteFile(filepath.Join(skillDir, "SKILL.md"), custom, 0o644)
+
+	data, err := loadSkill(dir, "sdd-explore")
+	if err != nil {
+		t.Fatalf("loadSkill with disk override: %v", err)
+	}
+	if !bytes.Equal(data, custom) {
+		t.Errorf("expected disk override content, got %d bytes", len(data))
+	}
+}
+
+func TestLoadSkillBothMissing(t *testing.T) {
+	t.Parallel()
+	_, err := loadSkill("", "nonexistent-phase")
+	if err == nil {
+		t.Fatal("expected error for nonexistent phase")
+	}
+	if !strings.Contains(err.Error(), "nonexistent-phase") {
+		t.Errorf("error should mention phase name, got: %v", err)
+	}
+}
+
+func TestEmbeddedSkillsComplete(t *testing.T) {
+	t.Parallel()
+	for _, desc := range phase.DefaultRegistry.All() {
+		if desc.Assemble == nil {
+			continue
+		}
+		data, err := readEmbeddedSkill("sdd-" + desc.Name)
+		if err != nil {
+			t.Errorf("missing embedded skill for assembled phase %q: %v", desc.Name, err)
+			continue
+		}
+		if len(data) == 0 {
+			t.Errorf("embedded skill for %q is empty", desc.Name)
+		}
+	}
+}
+
+func TestEmbeddedFilesExactlyEight(t *testing.T) {
+	t.Parallel()
+	entries, err := fs.ReadDir(promptFS, "prompts")
+	if err != nil {
+		t.Fatalf("read embedded prompts dir: %v", err)
+	}
+	if len(entries) != 8 {
+		t.Errorf("expected 8 embedded prompt files, got %d", len(entries))
+	}
+	for _, e := range entries {
+		if !strings.HasSuffix(e.Name(), ".md") {
+			t.Errorf("unexpected non-.md file in prompts: %s", e.Name())
+		}
+	}
+}
+
+func TestAssembleExploreEmptySkillsPath(t *testing.T) {
+	t.Parallel()
+	_, _, p := setupFixture(t)
+	p.SkillsPath = ""
+
+	var buf bytes.Buffer
+	err := AssembleExplore(&buf, p)
+	if err != nil {
+		t.Fatalf("AssembleExplore with empty SkillsPath: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "--- SKILL ---") {
+		t.Error("missing SKILL section from embedded fallback")
+	}
+	if !strings.Contains(out, "--- PROJECT ---") {
+		t.Error("missing PROJECT section")
+	}
+}
+
+// --- Cache Embed Tests ---
+
+func TestInputHashEmbeddedFallback(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	h1 := inputHash(dir, nil, "", "explore")
+	h2 := inputHash(dir, nil, "", "explore")
+	if h1 != h2 {
+		t.Errorf("embedded hash not deterministic: %s != %s", h1, h2)
+	}
+	if len(h1) != 64 {
+		t.Errorf("expected 64-char hex hash, got %d chars", len(h1))
+	}
+}
+
+func TestInputHashDiskVsEmbedded(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	skillDir := filepath.Join(dir, "skills", "sdd-explore")
+	os.MkdirAll(skillDir, 0o755)
+	os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte("custom skill content"), 0o644)
+
+	hashDisk := inputHash(dir, nil, filepath.Join(dir, "skills"), "explore")
+	hashEmbed := inputHash(dir, nil, "", "explore")
+	if hashDisk == hashEmbed {
+		t.Error("disk and embedded hashes should differ when skill content differs")
 	}
 }

@@ -22,8 +22,8 @@ import (
 // Any cache entry written with a different version is treated as stale.
 // Bump this when: adding new sections to assemblers, changing section
 // labels, modifying summary format, or changing what artifacts are loaded.
-// Bumped to 6 for phase-interface refactor (cache input lookup changed).
-const cacheVersion = 6
+// Bumped to 7: embedded skills fallback; hash now always includes skill bytes.
+const cacheVersion = 7
 
 // Phase TTL values are now in the phase registry.
 // See internal/phase/registry.go for the canonical definitions.
@@ -64,6 +64,21 @@ func phaseCacheTTL(name string) time.Duration {
 	return desc.CacheTTL
 }
 
+// readSkillBytes reads skill content for hashing.
+// phaseName is the bare name, e.g. "explore" (no sdd- prefix).
+func readSkillBytes(skillsPath, phaseName string) []byte {
+	fullName := "sdd-" + phaseName
+	if skillsPath != "" {
+		if data, err := os.ReadFile(filepath.Join(skillsPath, fullName, "SKILL.md")); err == nil {
+			return data
+		}
+	}
+	if data, err := readEmbeddedSkill(fullName); err == nil {
+		return data
+	}
+	return nil
+}
+
 // inputHash computes a SHA256 hash of all input artifacts + SKILL.md for a phase.
 // Includes cacheVersion so format changes auto-invalidate.
 // Includes SKILL.md so skill edits invalidate the cache (tokentally ETag pattern).
@@ -75,9 +90,8 @@ func inputHash(changeDir string, inputs []string, skillsPath, phaseName string) 
 
 	// Hash the SKILL.md for this phase — fixes correctness bug where
 	// editing a skill wouldn't invalidate cached context.
-	if skillsPath != "" && phaseName != "" {
-		skillPath := filepath.Join(skillsPath, "sdd-"+phaseName, "SKILL.md")
-		if data, err := os.ReadFile(skillPath); err == nil {
+	if phaseName != "" {
+		if data := readSkillBytes(skillsPath, phaseName); data != nil {
 			fmt.Fprintf(h, "skill:%d:", len(data))
 			h.Write(data)
 		}

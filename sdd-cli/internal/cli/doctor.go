@@ -96,6 +96,9 @@ func checkSkillsPath(cfg *config.Config) CheckResult {
 	if cfg == nil {
 		return CheckResult{Name: "skills_path", Status: "warn", Message: "skipped: config unavailable"}
 	}
+	if cfg.SkillsPath == "" {
+		return CheckResult{Name: "skills_path", Status: "warn", Message: "no skills_path configured — using embedded prompts"}
+	}
 	if _, err := os.Stat(cfg.SkillsPath); err != nil {
 		return CheckResult{Name: "skills_path", Status: "fail", Message: fmt.Sprintf("skills directory not found: %s", cfg.SkillsPath)}
 	}

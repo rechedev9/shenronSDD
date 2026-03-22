@@ -10,8 +10,10 @@ package context
 
 import (
 	"bytes"
+	"embed"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -22,6 +24,15 @@ import (
 	"github.com/rechedev9/shenronSDD/sdd-cli/internal/phase"
 	"github.com/rechedev9/shenronSDD/sdd-cli/internal/state"
 )
+
+//go:embed prompts/*.md
+var promptFS embed.FS
+
+// readEmbeddedSkill reads a skill from the embedded FS.
+// phaseName is the full directory-style name, e.g. "sdd-explore".
+func readEmbeddedSkill(phaseName string) ([]byte, error) {
+	return fs.ReadFile(promptFS, "prompts/"+phaseName+".md")
+}
 
 // Params is a type alias for phase.AssemblerParams.
 // All existing usage of *Params and Params{} continues to compile.
@@ -177,14 +188,18 @@ func AssembleConcurrent(w io.Writer, phases []state.Phase, p *Params) error {
 	return nil
 }
 
-// loadSkill reads a SKILL.md file from the skills directory.
+// loadSkill reads a SKILL.md file, trying disk first, then embedded fallback.
 func loadSkill(skillsPath, phaseName string) ([]byte, error) {
-	path := filepath.Join(skillsPath, phaseName, "SKILL.md")
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("load skill %s: %w", phaseName, err)
+	if skillsPath != "" {
+		path := filepath.Join(skillsPath, phaseName, "SKILL.md")
+		if data, err := os.ReadFile(path); err == nil {
+			return data, nil
+		}
 	}
-	return data, nil
+	if data, err := readEmbeddedSkill(phaseName); err == nil {
+		return data, nil
+	}
+	return nil, fmt.Errorf("load skill %s: not found on disk or in embedded prompts", phaseName)
 }
 
 // loadArtifact reads an artifact file from the change directory.
