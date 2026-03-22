@@ -25,9 +25,6 @@ import (
 // Bumped to 7: embedded skills fallback; hash now always includes skill bytes.
 const cacheVersion = 7
 
-// Phase TTL values are now in the phase registry.
-// See internal/phase/registry.go for the canonical definitions.
-
 // cacheDir returns the cache directory for a change.
 func cacheDir(changeDir string) string {
 	return filepath.Join(changeDir, ".cache")
@@ -42,9 +39,6 @@ func contextCachePath(changeDir, phase string) string {
 func hashCachePath(changeDir, phase string) string {
 	return filepath.Join(cacheDir(changeDir), phase+".hash")
 }
-
-// Phase cache inputs are now in the phase registry.
-// See internal/phase/registry.go for the canonical definitions.
 
 // phaseCacheInputs returns CacheInputs for a phase from the registry.
 func phaseCacheInputs(name string) []string {
@@ -67,16 +61,8 @@ func phaseCacheTTL(name string) time.Duration {
 // readSkillBytes reads skill content for hashing.
 // phaseName is the bare name, e.g. "explore" (no sdd- prefix).
 func readSkillBytes(skillsPath, phaseName string) []byte {
-	fullName := "sdd-" + phaseName
-	if skillsPath != "" {
-		if data, err := os.ReadFile(filepath.Join(skillsPath, fullName, "SKILL.md")); err == nil {
-			return data
-		}
-	}
-	if data, err := readEmbeddedSkill(fullName); err == nil {
-		return data
-	}
-	return nil
+	data, _ := loadSkill(skillsPath, "sdd-"+phaseName)
+	return data
 }
 
 // inputHash computes a SHA256 hash of all input artifacts + SKILL.md for a phase.
